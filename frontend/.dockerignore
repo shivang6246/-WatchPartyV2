@@ -1,0 +1,9 @@
+node_modules/
+.next/
+.env.local
+npm-debug.log*
+
+# Secrets never go into an image
+.env
+.env.*
+!.env*.example

@@ -1,0 +1,12 @@
+# Scrapes the backend over the compose network. /actuator/prometheus is never
+# reachable from outside: the backend port is loopback-only and Caddy answers
+# /actuator/* with 404.
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: watchparty-backend
+    metrics_path: /actuator/prometheus
+    static_configs:
+      - targets: ["backend:8080"]

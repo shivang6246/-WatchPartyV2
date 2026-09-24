@@ -1,0 +1,165 @@
+# WatchParty local and single-host deployment.
+#
+# Nothing in this file carries a secret: every credential comes from .env,
+# which is gitignored. Copy .env.example and fill it in before the first run.
+services:
+  # Local Postgres for development. Point DATABASE_URL at Supabase instead
+  # and this service is simply never started.
+  postgres:
+    image: postgres:16-alpine
+    profiles: [local-db]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-watchparty}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-watchparty}
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    # Deliberately no ports: the app reaches it over the compose network, and
+    # a published port is one security group edit away from being public.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-watchparty} -d ${POSTGRES_DB:-watchparty}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      --appendonly yes
+      --maxmemory-policy noeviction
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+
+  backend:
+    build:
+      context: ./backend
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      # A Supabase session-pooler JDBC URL, or the local postgres service above.
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL in .env}
+      DATABASE_USER: ${DATABASE_USER:?set DATABASE_USER in .env}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD in .env}
+      DATABASE_POOL_SIZE: ${DATABASE_POOL_SIZE:-5}
+      REDIS_HOST: redis
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      JWT_KEY_ID: ${JWT_KEY_ID:-k1}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost:3000}
+      CORS_ALLOWED_EXTENSION_IDS: ${CORS_ALLOWED_EXTENSION_IDS:-}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-false}
+      ROOM_MAX_MEMBERS: ${ROOM_MAX_MEMBERS:-25}
+      ROOM_HOST_GRACE: ${ROOM_HOST_GRACE:-45s}
+      ROOM_EMPTY_GRACE: ${ROOM_EMPTY_GRACE:-10m}
+      ROOM_MAX_QUEUE: ${ROOM_MAX_QUEUE:-50}
+      # JSON log lines (Elastic Common Schema), ready for CloudWatch Logs or
+      # any other collector. Set LOG_FORMAT=logstash or gelf to change shape.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ${LOG_FORMAT:-ecs}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      MAIL_FROM: ${MAIL_FROM:-WatchParty <no-reply@localhost>}
+      VERIFICATION_TTL: ${VERIFICATION_TTL:-24h}
+      VERIFICATION_REQUIRED: ${VERIFICATION_REQUIRED:-}
+      WEB_BASE_URL: ${WEB_BASE_URL:-http://localhost:3000}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}
+      YOUTUBE_REGION: ${YOUTUBE_REGION:-US}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:-http://localhost:8080/api/v1/auth/google/callback}
+      GOOGLE_POST_LOGIN_REDIRECT: ${GOOGLE_POST_LOGIN_REDIRECT:-http://localhost:3000/auth/callback}
+    ports:
+      # Loopback only. Behind the proxy in production; drop this line there.
+      - "127.0.0.1:8080:8080"
+    networks: [internal, edge]
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8080}
+        NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8080/ws}
+        NEXT_PUBLIC_GOOGLE_ENABLED: ${NEXT_PUBLIC_GOOGLE_ENABLED:-false}
+    restart: unless-stopped
+    depends_on: [backend]
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [edge]
+
+  # TLS, HSTS and one origin for both halves. Start it with:
+  #   docker compose --profile proxy up -d
+  proxy:
+    image: caddy:2-alpine
+    profiles: [proxy]
+    restart: unless-stopped
+    depends_on: [web, backend]
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:-localhost}
+    volumes:
+      - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    networks: [edge]
+
+  # Metrics and a ready-made dashboard. Start it with:
+  #   docker compose --profile observability up -d
+  # Grafana is on http://localhost:3001 (admin / GRAFANA_PASSWORD).
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: [observability]
+    restart: unless-stopped
+    depends_on: [backend]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=15d
+    volumes:
+      - ./ops/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    # No published port: Grafana reaches it over the compose network.
+    networks: [internal]
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: [observability]
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?set GRAFANA_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./ops/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./ops/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3001:3000"
+    networks: [internal]
+
+volumes:
+  pg-data:
+  redis-data:
+  caddy-data:
+  caddy-config:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  # Datastores are reachable only from the backend.
+  internal:
+  edge:

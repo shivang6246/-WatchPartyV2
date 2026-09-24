@@ -1,0 +1,341 @@
+@import "tailwindcss";
+
+/*
+ * A phone held sideways: too short for the stacked layout, too narrow for the
+ * desktop one. The room puts the player and the chat side by side here.
+ */
+@custom-variant land (@media (orientation: landscape) and (max-height: 560px) and (max-width: 1023.98px));
+
+/*
+ * Clean and dark: near-black surfaces, off-white type, one electric-cobalt
+ * accent. The halo, a ring of white light, is the one piece of ornament.
+ * Utilities come from these tokens: bg-ink, bg-panel, text-cream, text-muted,
+ * border-line, bg-cobalt, ...
+ */
+@theme {
+  --color-ink: #050507;
+  --color-stage: #08080b;
+  --color-panel: #0d0d11;
+  --color-panel-2: #15151b;
+  --color-panel-3: #1e1e26;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.15);
+  --color-cream: #f3f3ef;
+  --color-muted: #9a9aa4;
+  --color-faint: #62626d;
+  --color-cobalt: #3b5bff;
+  --color-cobalt-bright: #5a77ff;
+  --color-cobalt-soft: #aabaff;
+  --color-cobalt-deep: #1b2fb8;
+  --color-ember: #ff5c61;
+  --color-sage: #6fe0b0;
+
+  --radius-screen: 1rem;
+
+  --animate-rise: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* Italic only: the serif is an accent for a word or two, never body text. */
+  --font-serif: var(--font-instrument), "Iowan Old Style", Georgia, serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  /* Glows bleed past their boxes on purpose; never let them widen the page.
+     clip, not hidden, so sticky panels still stick. */
+  overflow-x: clip;
+  background: var(--color-ink);
+  color: var(--color-cream);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+::selection {
+  background: rgb(59 91 255 / 0.45);
+  color: #fff;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-cobalt-bright);
+  outline-offset: 2px;
+}
+
+/* One cool light from above, fixed so content scrolls through it. Static:
+   a single layer the browser paints once. */
+.spotlight::before {
+  content: "";
+  position: fixed;
+  z-index: -1;
+  inset: 0 0 auto;
+  height: 70vh;
+  pointer-events: none;
+  background: radial-gradient(60% 55% at 50% 0%, rgb(59 91 255 / 0.16), transparent 70%);
+}
+
+/*
+ * The halo: a ring of white light with a cobalt bloom. Absolutely positioned;
+ * size it with a width and it stays round. Two shadows, no animation, so it
+ * costs one paint. A slow glint runs around it only on a desktop with motion on.
+ */
+.halo {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  pointer-events: none;
+  --ring: clamp(4px, 0.8vw, 9px);
+  border: var(--ring) solid rgb(255 255 255 / 0.95);
+  box-shadow:
+    0 0 24px rgb(170 186 255 / 0.55),
+    0 0 90px rgb(59 91 255 / 0.4),
+    inset 0 0 24px rgb(170 186 255 / 0.35);
+}
+
+.halo-dim {
+  border-color: rgb(255 255 255 / 0.18);
+  box-shadow:
+    0 0 40px rgb(59 91 255 / 0.16),
+    inset 0 0 30px rgb(59 91 255 / 0.1);
+}
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .halo:not(.halo-dim)::before {
+    content: "";
+    position: absolute;
+    inset: calc(var(--ring) * -1.5);
+    border-radius: inherit;
+    background: conic-gradient(from 0deg, transparent 0 70%, rgb(200 212 255 / 0.9) 84%, transparent 92%);
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring) * 2), #000 calc(100% - var(--ring) * 1.9));
+    mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring) * 2), #000 calc(100% - var(--ring) * 1.9));
+    animation: halo-spin 8s linear infinite;
+    will-change: transform;
+  }
+}
+
+@keyframes halo-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-line);
+}
+
+/* A room code, printed like a ticket stub. */
+.ticket {
+  font-family: var(--font-mono);
+  letter-spacing: 0.2em;
+  border: 1px dashed rgb(90 119 255 / 0.55);
+  background: rgb(59 91 255 / 0.08);
+  color: var(--color-cobalt-soft);
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+@keyframes rise {
+  from {
+    transform: translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(111 224 176 / 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgb(111 224 176 / 0);
+  }
+}
+
+/* Sheets rise from the bottom on a phone, which is where the thumb already is. */
+@keyframes sheet-in {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.sheet-in {
+  animation: sheet-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.fade-in {
+  animation: fade-in 0.18s ease-out;
+}
+
+/* A reaction drifts up over the video and fades before it reaches the top. */
+@keyframes reaction-float {
+  0% {
+    transform: translate(-50%, 0) scale(0.6);
+    opacity: 0;
+  }
+  12% {
+    transform: translate(-50%, -12px) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -200px) scale(1);
+    opacity: 0;
+  }
+}
+
+.reaction-float {
+  animation: reaction-float 2.8s ease-out forwards;
+  will-change: transform, opacity;
+}
+
+/*
+ * Fullscreen puts the whole stage up, not the bare player, so the room's own
+ * transport, sync readout and reactions come with it. The screen takes the
+ * space that is left and the video fills it, since the 16:9 box that suits a
+ * page would letterbox itself twice on a 16:9 display.
+ */
+.stage:fullscreen {
+  display: flex;
+  flex-direction: column;
+  max-width: none;
+  background: #000;
+  padding: 0;
+}
+
+.stage:fullscreen .stage-screen {
+  flex: 1;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.stage:fullscreen .stage-frame,
+.stage:fullscreen .stage-screen > div:first-child {
+  height: 100%;
+  aspect-ratio: auto;
+}
+
+.stage:fullscreen .stage-transport {
+  margin: 0;
+  border-radius: 0;
+  border-width: 1px 0 0;
+  background: rgb(5 5 7 / 0.92);
+}
+
+/* The ambilight is only there to spill onto a page background. */
+.stage:fullscreen img[aria-hidden="true"] {
+  display: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+.thin-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-panel-3) transparent;
+}
+
+/* The scrub bar: the track is drawn by the component, this is only the thumb. */
+input[type="range"] {
+  appearance: none;
+  height: 24px;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  touch-action: pan-y;
+}
+
+input[type="range"]:disabled {
+  cursor: default;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--color-cream);
+  box-shadow: 0 0 0 5px rgb(59 91 255 / 0.35);
+  transition: transform 0.15s;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.2);
+}
+
+input[type="range"]:disabled::-webkit-slider-thumb {
+  opacity: 0;
+}
+
+input[type="range"]::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border: none;
+  border-radius: 999px;
+  background: var(--color-cream);
+  box-shadow: 0 0 0 5px rgb(59 91 255 / 0.35);
+}
+
+/* A finger needs a bigger thumb and a taller hit area than a cursor does. */
+@media (pointer: coarse) {
+  input[type="range"] {
+    height: 32px;
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in,
+  .fade-in,
+  .animate-rise {
+    animation: none;
+  }
+
+  /* Still shown, just without the flight: it sits and fades. */
+  .reaction-float {
+    animation: fade-in 0.2s ease-out reverse 2.6s forwards;
+    transform: translate(-50%, -24px);
+  }
+}

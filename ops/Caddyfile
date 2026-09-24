@@ -1,0 +1,30 @@
+{$SITE_ADDRESS:localhost} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+
+	# The socket needs long idle timeouts: a paused room sends nothing for
+	# minutes, and a default 60s idle timeout would disconnect it.
+	@ws path /ws*
+	handle @ws {
+		reverse_proxy backend:8080
+	}
+
+	handle /api/* {
+		reverse_proxy backend:8080
+	}
+
+	# Health and metrics stay on the internal network.
+	handle /actuator/* {
+		respond 404
+	}
+
+	handle {
+		reverse_proxy web:3000
+	}
+}
