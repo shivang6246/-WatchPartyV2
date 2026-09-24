@@ -14,6 +14,8 @@ interface Props {
 /**
  * The whole product in one screen: a name, one tap, watching. No install, no
  * account, no email. On a phone it is a single column; the artwork sits on top.
+ * On its side the artwork moves beside the form, or it would fill the screen
+ * and push the name field below the fold.
  */
 export default function JoinGate({ preview, onJoin }: Props) {
   const [displayName, setDisplayName] = useState("");
@@ -21,18 +23,18 @@ export default function JoinGate({ preview, onJoin }: Props) {
 
   return (
     <main className="spotlight flex min-h-dvh flex-col px-4">
-      <header className="flex h-16 items-center">
+      <header className="flex h-16 items-center land:h-12">
         <Link href="/" aria-label="WatchParty home">
           <Logo />
         </Link>
       </header>
 
-      <div className="mx-auto flex w-full max-w-md flex-1 flex-col pb-10 pt-2 sm:justify-center sm:pt-0">
-        <div className="animate-rise overflow-hidden rounded-3xl border border-line-strong bg-panel shadow-[0_30px_90px_-30px_rgb(0_0_0/0.9),0_0_60px_-30px_rgb(59_91_255/0.6)]">
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col pb-10 pt-2 sm:justify-center sm:pt-0 land:max-w-2xl land:pb-3">
+        <div className="animate-rise overflow-hidden rounded-3xl border land:flex border-line-strong bg-panel shadow-[0_30px_90px_-30px_rgb(0_0_0/0.9),0_0_60px_-30px_rgb(59_91_255/0.6)]">
           {preview?.videoThumbnail ? (
-            <div className="relative aspect-video w-full overflow-hidden bg-panel-2">
+            <div className="relative aspect-video w-full overflow-hidden bg-panel-2 land:aspect-auto land:w-[42%] land:shrink-0">
               <Poster src={preview.videoThumbnail} />
-              <div className="absolute inset-0 bg-gradient-to-t from-panel via-transparent to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-t from-panel via-transparent to-transparent land:bg-gradient-to-l" />
               <span className="absolute left-3 top-3 flex items-center gap-2 rounded-full bg-ink/75 px-3 py-1 text-[11px] font-medium">
                 <LiveDot />
                 {preview.memberCount} watching now
@@ -40,13 +42,13 @@ export default function JoinGate({ preview, onJoin }: Props) {
             </div>
           ) : null}
 
-          <div className="p-5 sm:p-7">
+          <div className="p-5 sm:p-7 land:min-w-0 land:flex-1 land:p-5">
             <Eyebrow>{preview?.code ? `Room ${preview.code}` : "You're invited"}</Eyebrow>
-            <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.02em] sm:text-3xl">
+            <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.02em] sm:text-3xl land:text-2xl">
               {preview?.title ?? "Join the room"}
             </h1>
             {preview?.videoTitle && preview.videoTitle !== preview.title ? (
-              <p className="mt-1.5 line-clamp-2 text-sm text-muted">{preview.videoTitle}</p>
+              <p className="mt-1.5 line-clamp-2 text-sm text-muted land:line-clamp-1">{preview.videoTitle}</p>
             ) : null}
             {!preview?.videoThumbnail && preview ? (
               <p className="mt-3 flex items-center gap-2 text-sm text-muted">
@@ -55,7 +57,7 @@ export default function JoinGate({ preview, onJoin }: Props) {
             ) : null}
 
             <form
-              className="mt-6 space-y-3"
+              className="mt-6 space-y-3 land:mt-4"
               onSubmit={async (event) => {
                 event.preventDefault();
                 setBusy(true);

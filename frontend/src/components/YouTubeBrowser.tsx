@@ -88,7 +88,7 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 space-y-3 border-b border-line bg-panel px-4 py-3 sm:px-6 sm:py-4">
+      <div className="sticky top-0 z-10 space-y-3 border-b border-line bg-panel px-4 py-3 sm:px-6 sm:py-4 land:py-2">
         <form
           className="relative"
           onSubmit={(event) => {
@@ -136,9 +136,9 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
         {loading && items.length === 0 ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
             {Array.from({ length: 6 }).map((_, index) => (
-              <div key={index} className="flex animate-pulse gap-3 sm:block">
-                <div className="aspect-video w-[42%] max-w-44 shrink-0 rounded-xl bg-panel-2 sm:w-full sm:max-w-none sm:rounded-2xl" />
-                <div className="flex-1 space-y-2 py-1 sm:mt-2.5">
+              <div key={index} className="flex animate-pulse gap-3 sm:block land:flex">
+                <div className="aspect-video w-[42%] max-w-44 shrink-0 rounded-xl bg-panel-2 sm:w-full sm:max-w-none sm:rounded-2xl land:w-[42%] land:max-w-44 land:rounded-xl" />
+                <div className="flex-1 space-y-2 py-1 sm:mt-2.5 land:mt-0">
                   <div className="h-3 w-3/4 rounded bg-panel-2" />
                   <div className="h-3 w-1/3 rounded bg-panel-2" />
                 </div>
@@ -157,9 +157,9 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
                 type="button"
                 onClick={() => onPick(item)}
                 disabled={busyRef === item.ref}
-                className="group flex gap-3 text-left transition active:scale-[0.99] disabled:opacity-60 sm:block"
+                className="group flex gap-3 text-left transition active:scale-[0.99] disabled:opacity-60 sm:block land:flex"
               >
-                <div className="relative aspect-video w-[42%] max-w-44 shrink-0 overflow-hidden rounded-xl border border-line bg-panel-2 transition group-hover:border-cobalt/40 sm:w-full sm:max-w-none sm:rounded-2xl">
+                <div className="relative aspect-video w-[42%] max-w-44 shrink-0 overflow-hidden rounded-xl border border-line bg-panel-2 transition group-hover:border-cobalt/40 sm:w-full sm:max-w-none sm:rounded-2xl land:w-[42%] land:max-w-44 land:rounded-xl">
                   {item.thumbnail ? (
                     <div className="h-full w-full transition duration-500 group-hover:scale-[1.05]">
                       <Poster src={item.thumbnail} />
@@ -180,7 +180,7 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
                     </span>
                   ) : null}
                 </div>
-                <div className="min-w-0 flex-1 py-0.5 sm:mt-2.5 sm:py-0">
+                <div className="min-w-0 flex-1 py-0.5 sm:mt-2.5 sm:py-0 land:mt-0 land:py-0.5">
                   <p className="line-clamp-2 text-sm font-medium leading-snug text-cream transition group-hover:text-cobalt-soft">
                     {item.title}
                   </p>

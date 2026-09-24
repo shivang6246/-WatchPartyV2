@@ -82,7 +82,7 @@ export default function HomePage() {
       <HomeHeader />
       <VerifyNotice />
 
-      <section className="grid items-center gap-10 pb-14 pt-8 sm:pb-20 sm:pt-14 lg:grid-cols-[1.1fr_1fr] lg:gap-8 lg:pt-16">
+      <section className="grid grid-cols-[minmax(0,1fr)] items-center gap-10 pb-14 pt-8 sm:pb-20 sm:pt-14 lg:grid-cols-[1.1fr_1fr] lg:gap-8 lg:pt-16">
         <div className="animate-rise">
           <p className="inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1 text-xs text-muted">
             <LiveDot /> YouTube, MP4, HLS and Vimeo

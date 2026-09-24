@@ -28,7 +28,7 @@ export default function HomeHeader() {
   }, [open]);
 
   return (
-    <header className="flex h-16 items-center justify-between gap-4">
+    <header className="flex h-16 items-center justify-between gap-3">
       <Link href="/" aria-label="WatchParty home">
         <Logo />
       </Link>
@@ -70,12 +70,12 @@ export default function HomeHeader() {
       ) : (
         <div className="flex items-center gap-1">
           <Link href="/login">
-            <Button variant="ghost" size="sm">
+            <Button variant="ghost" size="sm" className="max-sm:px-3">
               Sign in
             </Button>
           </Link>
           <Link href="/register">
-            <Button variant="secondary" size="sm">
+            <Button variant="secondary" size="sm" className="max-sm:px-3">
               Sign up
             </Button>
           </Link>

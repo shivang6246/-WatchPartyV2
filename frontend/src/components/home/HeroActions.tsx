@@ -79,7 +79,9 @@ export default function HeroActions() {
             autoCapitalize="characters"
             spellCheck={false}
             enterKeyHint="go"
-            className="min-w-0 flex-1 bg-transparent font-mono text-base uppercase tracking-[0.2em] text-cream placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-faint focus:outline-none"
+            // w-0: an input is 20 characters wide by default, which alone made
+            // the form wider than a 320px phone. flex-1 gives it the room back.
+            className="w-0 min-w-0 flex-1 bg-transparent font-mono text-base uppercase tracking-[0.2em] text-cream placeholder:font-sans placeholder:normal-case placeholder:tracking-normal placeholder:text-faint focus:outline-none"
           />
           <Button type="submit" size="sm" variant={codeReady ? "light" : "secondary"} disabled={!codeReady} className="h-10 px-5">
             Join

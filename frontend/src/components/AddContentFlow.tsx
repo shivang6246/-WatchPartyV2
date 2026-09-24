@@ -17,11 +17,23 @@ interface Props {
   title?: string;
 }
 
+// The same tiles the server sends (CatalogController.sources), so the list
+// keeps its size when the real answer lands just after the sheet has opened.
 const FALLBACK_SOURCES: SourceStatus[] = [
   { id: "youtube", label: "YouTube", browsable: false, playableOnWeb: true },
-  { id: "hosted", label: "Video link", browsable: false, playableOnWeb: true },
-  { id: "vimeo", label: "Vimeo", browsable: false, playableOnWeb: true },
+  { id: "hosted", label: "Video link", browsable: false, playableOnWeb: true, note: "A direct MP4, WebM or HLS URL." },
+  { id: "vimeo", label: "Vimeo", browsable: false, playableOnWeb: true, note: "Paste a Vimeo link." },
+  {
+    id: "drm_extension",
+    label: "Netflix, Prime Video, Disney+",
+    browsable: false,
+    playableOnWeb: false,
+    note: "DRM playback needs the desktop Chrome extension. The room still works for chat.",
+  },
 ];
+
+/** The last answer, so opening the picker again shows it straight away. */
+let knownSources: SourceStatus[] | null = null;
 
 /**
  * The "+" flow: pick a source, then pick something to watch.
@@ -31,7 +43,7 @@ const FALLBACK_SOURCES: SourceStatus[] = [
  * box that cannot work.
  */
 export default function AddContentFlow({ open, onClose, onPick, title = "Start a watch party" }: Props) {
-  const [sources, setSources] = useState<SourceStatus[]>(FALLBACK_SOURCES);
+  const [sources, setSources] = useState<SourceStatus[]>(knownSources ?? FALLBACK_SOURCES);
   const [chosen, setChosen] = useState<Platform | null>(null);
   const [busyRef, setBusyRef] = useState<string | null>(null);
   const [link, setLink] = useState("");
@@ -40,7 +52,13 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
 
   useEffect(() => {
     if (!open) return;
-    api.sources().then(setSources).catch(() => undefined);
+    api
+      .sources()
+      .then((fresh) => {
+        knownSources = fresh;
+        setSources(fresh);
+      })
+      .catch(() => undefined);
   }, [open]);
 
   useEffect(() => {
@@ -89,7 +107,7 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
       onBack={chosen !== null ? () => setChosen(null) : undefined}
     >
       {chosen === null ? (
-        <div className="space-y-2 p-4 sm:p-6">
+        <div key="sources" className="fade-in space-y-2 p-4 sm:p-6">
           <p className="mb-3 text-sm text-muted">Pick where the video comes from.</p>
           {sources.map((source) => {
             const disabled = !source.playableOnWeb;
@@ -127,7 +145,9 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
                     <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 ) : (
-                  <span className="rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-widest text-faint">
+                  // The note already says so; on a phone the badge would only
+                  // squeeze the label onto two lines.
+                  <span className="hidden shrink-0 rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-widest text-faint sm:block">
                     Extension
                   </span>
                 )}
@@ -138,7 +158,7 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
       ) : chosen === "youtube" ? (
         <YouTubeBrowser onPick={(item) => void pick(item)} busyRef={busyRef} />
       ) : (
-        <div className="space-y-4 p-4 sm:p-6">
+        <div key={chosen} className="fade-in space-y-4 p-4 sm:p-6">
           <Input
             value={link}
             onChange={(event) => setLink(event.target.value)}

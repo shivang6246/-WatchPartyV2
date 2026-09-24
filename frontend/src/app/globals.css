@@ -144,13 +144,15 @@ body {
   text-wrap: balance;
 }
 
+/* Ends on none, not translateY(0): the fill mode keeps the last frame, and any
+   transform left on an element traps its fixed descendants inside it. */
 @keyframes rise {
   from {
     transform: translateY(12px);
     opacity: 0;
   }
   to {
-    transform: translateY(0);
+    transform: none;
     opacity: 1;
   }
 }
