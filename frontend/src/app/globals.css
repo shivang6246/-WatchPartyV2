@@ -36,7 +36,6 @@
   --radius-screen: 1.25rem;
 
   --animate-rise: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  --animate-pulse-dot: pulse-dot 2.4s ease-in-out infinite;
 }
 
 @theme inline {
@@ -212,13 +211,62 @@ html[data-auth="in"] .auth-out {
   }
 }
 
-@keyframes pulse-dot {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgb(201 174 128 / 0.45);
+/*
+ * The pulse ("live", or a control that wants a tap): a champagne ring that
+ * breathes around the element. It is drawn once and only its opacity and
+ * scale animate, which the compositor runs by itself. It used to animate a
+ * box-shadow, which repaints on the main thread every frame, for as long as
+ * it shows: over the home trailer that was most of the page's main-thread
+ * time, and on a phone that is the thread YouTube's player runs on too.
+ */
+@layer components {
+  .animate-pulse-dot {
+    position: relative;
   }
+
+  .animate-pulse-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: 0 0 0 4px rgb(201 174 128 / 0.4);
+    opacity: 0;
+    transform: scale(0.8);
+    animation: pulse-ring 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes pulse-ring {
   50% {
-    box-shadow: 0 0 0 4px rgb(201 174 128 / 0);
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/*
+ * The home trailer's iframe: covers its box whatever the box's shape (16:9,
+ * cropped). Where the box is wide the crop is at the top and bottom, so the
+ * frame is zoomed past YouTube's corners (and a 4:3 trailer's side bars).
+ * Where it is tall (a phone) the sides are already cropped far past both, and
+ * zooming would only make the picture softer.
+ */
+.trailer-frame {
+  container-type: size;
+}
+
+.trailer-frame iframe {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: max(100cqw, 177.78cqh);
+  height: max(100cqh, 56.25cqw);
+  transform: translate(-50%, -50%) scale(1.36);
+}
+
+@container (max-aspect-ratio: 1 / 1) {
+  .trailer-frame iframe {
+    transform: translate(-50%, -50%);
   }
 }
 
@@ -408,5 +456,12 @@ input[type="range"]::-moz-range-thumb {
   /* No zoom: the icon only appears and fades. */
   .bezel {
     animation: fade-in 0.5s ease-out reverse forwards;
+  }
+
+  /* The ring stays, still: it is a signal, not decoration. */
+  .animate-pulse-dot::after {
+    animation: none;
+    opacity: 0.6;
+    transform: none;
   }
 }

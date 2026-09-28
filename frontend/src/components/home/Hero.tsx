@@ -11,6 +11,7 @@ import {
   type MutableRefObject,
   type ReactNode,
 } from "react";
+import { preconnect } from "react-dom";
 import { Button, IconButton, LiveDot, Spinner } from "@/components/ui";
 import { useStartParty } from "@/components/home/useStartParty";
 import { api } from "@/lib/api";
@@ -26,11 +27,14 @@ const PLAYLIST_SIZE = 12;
 /**
  * YouTube draws its own title bar and buttons over the first seconds of
  * playback, controls off or not. The still stays up until they have gone:
- * the phone embed's centre pause button is the last, gone ~4.7 s after start.
+ * the title bar by ~3 s, the centre pause button (desktop and phone embeds
+ * alike) ~4.7 s after start.
  */
 const YOUTUBE_CHROME_MS = 5200;
 /** How often the player is checked for having stopped when it should play. */
 const WATCH_EVERY_MS = 2000;
+/** How often the progress hairline is moved on; it glides between updates. */
+const PROGRESS_EVERY_MS = 1000;
 /** Checks it may spend stopped, being asked to play, before a tap is offered. */
 const BLOCKED_AFTER_CHECKS = 3;
 
@@ -65,8 +69,14 @@ interface Hero {
   /** The viewer paused it; nothing restarts it until they press play. */
   userPausedRef: MutableRefObject<boolean>;
   muted: boolean;
-  progress: number;
-  setProgress: (progress: number) => void;
+  /**
+   * How far into the trailer (0–1), and the hairline that shows it. Written
+   * straight to the element, never through state: a re-render every second
+   * of the hero is main-thread time taken from YouTube's player, which on a
+   * phone runs on the same thread.
+   */
+  progressRef: MutableRefObject<number>;
+  progressBarRef: MutableRefObject<HTMLDivElement | null>;
   next: () => void;
   togglePlay: () => void;
   toggleSound: () => void;
@@ -106,7 +116,8 @@ export function HeroProvider({ children }: { children: ReactNode }) {
   const [revealed, setRevealed] = useState(false);
   const [blocked, setBlocked] = useState(false);
   const [muted, setMuted] = useState(true);
-  const [progress, setProgress] = useState(0);
+  const progressRef = useRef(0);
+  const progressBarRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YT.Player | null>(null);
   const userPausedRef = useRef(false);
 
@@ -120,6 +131,12 @@ export function HeroProvider({ children }: { children: ReactNode }) {
     const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
     setMotion(!calm && !saveData);
+    // The trailer will play by itself: open the connections its player needs
+    // (the API script and the embed) while the page is still settling.
+    if (!calm && !saveData) {
+      preconnect("https://www.youtube.com");
+      preconnect("https://www.youtube-nocookie.com");
+    }
 
     let cancelled = false;
     api
@@ -152,7 +169,7 @@ export function HeroProvider({ children }: { children: ReactNode }) {
     // Asking for the next one is asking for it to play.
     userPausedRef.current = false;
     setShowing(false);
-    setProgress(0);
+    progressRef.current = 0;
     setIndex((current) => current + 1);
   }, []);
 
@@ -206,14 +223,14 @@ export function HeroProvider({ children }: { children: ReactNode }) {
       setBlocked,
       userPausedRef,
       muted,
-      progress,
-      setProgress,
+      progressRef,
+      progressBarRef,
       next,
       togglePlay,
       toggleSound,
       playerRef,
     }),
-    [item, index, wide, motion, wantsPlayer, showing, revealed, blocked, muted, progress, next, togglePlay, toggleSound],
+    [item, index, wide, motion, wantsPlayer, showing, revealed, blocked, muted, next, togglePlay, toggleSound],
   );
 
   return <HeroContext.Provider value={value}>{children}</HeroContext.Provider>;
@@ -238,7 +255,8 @@ export function HeroBackdrop() {
     revealed,
     setBlocked,
     userPausedRef,
-    setProgress,
+    progressRef,
+    progressBarRef,
     next,
     playerRef,
   } = useHero();
@@ -336,16 +354,20 @@ export function HeroBackdrop() {
     if (ref && player && created.current) player.loadVideoById?.({ videoId: ref, startSeconds: START_AT_S });
   }, [turn, ref, playerRef]);
 
-  // How far into the trailer, for the progress hairline.
+  // How far into the trailer, for the progress hairline: once a second,
+  // written to the element, which glides to it on the compositor (a
+  // transform, never a width, which would lay the page out every frame).
   useEffect(() => {
     if (!showing) return;
     const timer = setInterval(() => {
       const player = playerRef.current;
       const duration = player?.getDuration?.() ?? 0;
-      if (player && duration > 0) setProgress(Math.min(1, (player.getCurrentTime?.() ?? 0) / duration));
-    }, 500);
+      if (!player || duration <= 0) return;
+      progressRef.current = Math.min(1, (player.getCurrentTime?.() ?? 0) / duration);
+      if (progressBarRef.current) progressBarRef.current.style.transform = `scaleX(${progressRef.current})`;
+    }, PROGRESS_EVERY_MS);
     return () => clearInterval(timer);
-  }, [showing, playerRef, setProgress]);
+  }, [showing, playerRef, progressRef, progressBarRef]);
 
   // Plays only while someone can see it: paused in a hidden tab or with the
   // hero scrolled away. And kept playing otherwise: a browser can pause a
@@ -408,14 +430,12 @@ export function HeroBackdrop() {
   // YouTube's standard thumbnails are 4:3 with the picture letterboxed inside.
   const letterboxed = poster !== null && /ytimg\.com\/vi\/[^/]+\/(hqdefault|sddefault|0|default)\.jpg/.test(poster);
 
+  // Everything over the playing video is redrawn with it every frame, so it
+  // is kept to plain gradients: no mask (that renders the whole backdrop
+  // off-screen first, every frame) and no separate veil (the picture's own
+  // opacity is the veil: 81% is 90% under a tenth of ink).
   return (
-    // The sides fade into the page: a trailer that is not 16:9 comes with
-    // YouTube's black bars, and any hard edge left would read as a seam.
-    <div
-      ref={boxRef}
-      className="pointer-events-none absolute inset-0 -z-10 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_9%,black_91%,transparent)]"
-      aria-hidden="true"
-    >
+    <div ref={boxRef} className="pointer-events-none absolute inset-0 -z-10 overflow-hidden" aria-hidden="true">
       {poster ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -423,25 +443,28 @@ export function HeroBackdrop() {
           src={poster}
           alt=""
           onError={() => setPoster(item.thumbnail && poster !== item.thumbnail ? item.thumbnail : null)}
-          className={`fade-in absolute inset-0 h-full w-full object-cover opacity-80 ${letterboxed ? "scale-[1.34]" : ""}`}
+          // Gone once the trailer has faded in over it: seen through the
+          // picture it would double every frame. Back at once when it stops.
+          className={`fade-in absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+            revealed ? "opacity-0 delay-700" : "opacity-[0.72]"
+          } ${letterboxed ? "scale-[1.34]" : ""}`}
         />
       ) : null}
-      {/* The iframe is sized to cover the box whatever its shape, and scaled
-          past the edges so YouTube's own corners never show, and far enough
-          that a 4:3 trailer's side bars fall outside the box. */}
+      {/* Sized in globals.css (.trailer-frame): covering the box whatever its
+          shape, zoomed past YouTube's corners only where the crop does not
+          already hide them. */}
       <div
         ref={hostRef}
-        className={`absolute inset-0 transition-opacity duration-700 [container-type:size] [&_iframe]:absolute [&_iframe]:left-1/2 [&_iframe]:top-1/2 [&_iframe]:h-[max(100cqh,56.25cqw)] [&_iframe]:w-[max(100cqw,177.78cqh)] [&_iframe]:-translate-x-1/2 [&_iframe]:-translate-y-1/2 [&_iframe]:scale-[1.36] ${
-          revealed ? "opacity-90" : "opacity-0"
-        }`}
+        className={`trailer-frame absolute inset-0 transition-opacity duration-700 ${revealed ? "opacity-[0.81]" : "opacity-0"}`}
       />
-      {/* The trailer is the hero, nearly full strength at every width: a
-          light veil, and only as much dark as the words on top need. The top
-          under the header and greeting, the bottom where it fades into the
-          page, and on a wide screen the left, where the greeting sits over
-          the picture. */}
-      <div className="absolute inset-0 bg-ink/10" />
+      {/* Only as much dark as the words on top need: the top under the header
+          and greeting, the bottom where it fades into the page, on a wide
+          screen the left, where the greeting sits over the picture, and the
+          two sides, which fade into the page so a trailer that is not 16:9
+          (YouTube's black bars) leaves no seam. */}
       <div className="absolute inset-0 hidden bg-gradient-to-r from-ink/75 via-ink/20 via-45% to-transparent lg:block" />
+      <div className="absolute inset-y-0 left-0 w-[9%] bg-gradient-to-r from-ink to-transparent" />
+      <div className="absolute inset-y-0 right-0 w-[9%] bg-gradient-to-l from-ink to-transparent" />
       <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-ink/85 to-transparent lg:from-ink/70" />
       <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-ink via-ink/50 to-transparent" />
     </div>
@@ -526,7 +549,8 @@ function RoundControl({
  * would rather not have moving pictures on the page needs.
  */
 export function NowShowing() {
-  const { item, wantsPlayer, showing, revealed, blocked, muted, progress, next, togglePlay, toggleSound } = useHero();
+  const { item, wantsPlayer, showing, revealed, blocked, muted, progressRef, progressBarRef, next, togglePlay, toggleSound } =
+    useHero();
   const { start, busyRef } = useStartParty();
   if (!item) return null;
   const busy = busyRef !== null && busyRef === (item.ref ?? item.url);
@@ -610,8 +634,15 @@ export function NowShowing() {
       {revealed ? (
         // No track, and kept in from the edges, which fade into the trailer:
         // a line along the edge would read as a border.
+        // The fill is moved by HeroBackdrop, straight on the element.
         <div className="absolute inset-x-5 bottom-1.5 h-[2px]" aria-hidden>
-          <div className="h-full rounded-full bg-cream/70 transition-[width] duration-500" style={{ width: `${progress * 100}%` }} />
+          <div
+            ref={(bar) => {
+              progressBarRef.current = bar;
+              if (bar) bar.style.transform = `scaleX(${progressRef.current})`;
+            }}
+            className="h-full origin-left rounded-full bg-cream/70 transition-transform duration-1000 ease-linear"
+          />
         </div>
       ) : null}
     </aside>
