@@ -4,6 +4,7 @@ import { HeroBackdrop, HeroProvider, NowShowing } from "@/components/home/Hero";
 import { JoinCodeForm, StartPartyButton } from "@/components/home/HeroActions";
 import HomeGreeting from "@/components/home/HomeGreeting";
 import MyRooms from "@/components/home/MyRooms";
+import QuickActions from "@/components/home/QuickActions";
 import TrendingRow from "@/components/home/TrendingRow";
 import VerifyNotice from "@/components/home/VerifyNotice";
 import { Accent, Logo } from "@/components/ui";
@@ -35,15 +36,16 @@ export default function HomePage() {
         {/* Nothing that arrives late may move what is already on screen: the
             "Now showing" card has its space reserved (the row's min height on
             a wide screen, the hero's bottom padding below lg, sized to the
-            compact card's one line). */}
-        <div className="relative isolate min-h-[17rem] pb-24 sm:min-h-[19rem] lg:min-h-0 lg:pb-16">
+            compact card's one line). Below md it sits higher, clear of the
+            floating card that overlaps the hero's bottom edge. */}
+        <div className="relative isolate min-h-[22rem] pb-[8.5rem] md:min-h-[19rem] md:pb-24 lg:min-h-0 lg:pb-16">
           <HeroBackdrop />
           <div className={column}>
             <AppHeader />
             <VerifyNotice />
             <div className="lg:flex lg:min-h-64 lg:items-end lg:justify-between lg:gap-10 lg:pt-14">
               <HomeGreeting />
-              <div className="absolute inset-x-5 bottom-5 sm:inset-x-6 lg:static">
+              <div className="absolute inset-x-5 bottom-16 sm:inset-x-6 md:bottom-5 lg:static">
                 <NowShowing />
               </div>
             </div>
@@ -51,9 +53,15 @@ export default function HomePage() {
         </div>
       </HeroProvider>
 
-      {/* The two ways in, as a section of their own under the hero, on the
-          page rather than over the trailer. */}
-      <section aria-labelledby="actions-h" className={`${column} pt-6 sm:pt-8 lg:pt-4`}>
+      {/* A phone: the two ways in as one floating, tabbed card over the
+          bottom edge of the trailer. */}
+      <div className={`${column} relative z-10 -mt-12 md:hidden`}>
+        <QuickActions />
+      </div>
+
+      {/* From md: the two ways in as a section of their own under the hero,
+          on the page rather than over the trailer. */}
+      <section aria-labelledby="actions-h" className={`${column} hidden pt-8 md:block lg:pt-4`}>
         <h2 id="actions-h" className="font-serif text-[22px] font-normal tracking-[-0.01em] sm:text-3xl">
           Watch <Accent>together</Accent>
         </h2>
@@ -109,7 +117,7 @@ export default function HomePage() {
       </section>
 
       <div className={column}>
-        <div className="mt-10 space-y-8 lg:mt-14 lg:space-y-14">
+        <div className="mt-8 space-y-8 md:mt-10 lg:mt-14 lg:space-y-14">
           <FriendsWatching />
           <MyRooms />
           <TrendingRow />

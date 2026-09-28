@@ -25,9 +25,10 @@ const START_DELAY_MS = 900;
 const PLAYLIST_SIZE = 12;
 /**
  * YouTube draws its own title bar and buttons over the first seconds of
- * playback, controls off or not. The still stays up until they have gone.
+ * playback, controls off or not. The still stays up until they have gone:
+ * the phone embed's centre pause button is the last, gone ~4.7 s after start.
  */
-const YOUTUBE_CHROME_MS = 3200;
+const YOUTUBE_CHROME_MS = 5200;
 /** How often the player is checked for having stopped when it should play. */
 const WATCH_EVERY_MS = 2000;
 /** Checks it may spend stopped, being asked to play, before a tap is offered. */
@@ -422,7 +423,7 @@ export function HeroBackdrop() {
           src={poster}
           alt=""
           onError={() => setPoster(item.thumbnail && poster !== item.thumbnail ? item.thumbnail : null)}
-          className={`fade-in absolute inset-0 h-full w-full object-cover opacity-45 lg:opacity-70 ${letterboxed ? "scale-[1.34]" : ""}`}
+          className={`fade-in absolute inset-0 h-full w-full object-cover opacity-80 ${letterboxed ? "scale-[1.34]" : ""}`}
         />
       ) : null}
       {/* The iframe is sized to cover the box whatever its shape, and scaled
@@ -431,17 +432,18 @@ export function HeroBackdrop() {
       <div
         ref={hostRef}
         className={`absolute inset-0 transition-opacity duration-700 [container-type:size] [&_iframe]:absolute [&_iframe]:left-1/2 [&_iframe]:top-1/2 [&_iframe]:h-[max(100cqh,56.25cqw)] [&_iframe]:w-[max(100cqw,177.78cqh)] [&_iframe]:-translate-x-1/2 [&_iframe]:-translate-y-1/2 [&_iframe]:scale-[1.36] ${
-          revealed ? "opacity-60 lg:opacity-85" : "opacity-0"
+          revealed ? "opacity-90" : "opacity-0"
         }`}
       />
-      {/* Enough dark for the words on top to read over any frame: the left,
-          where the greeting is, on a wide screen; an even veil on a phone.
-          Both fade out at the top and into the page at the bottom. */}
-      <div className="absolute inset-0 bg-ink/25 lg:bg-ink/20" />
-      <div className="absolute inset-0 hidden bg-gradient-to-r from-ink/90 via-ink/45 to-transparent lg:block" />
-      <div className="absolute inset-y-0 right-0 hidden w-1/4 bg-gradient-to-l from-ink/60 to-transparent lg:block" />
-      <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-ink/85 to-transparent lg:h-40" />
-      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-ink via-ink/70 to-transparent lg:h-3/5 lg:via-ink/80" />
+      {/* The trailer is the hero, nearly full strength at every width: a
+          light veil, and only as much dark as the words on top need. The top
+          under the header and greeting, the bottom where it fades into the
+          page, and on a wide screen the left, where the greeting sits over
+          the picture. */}
+      <div className="absolute inset-0 bg-ink/10" />
+      <div className="absolute inset-0 hidden bg-gradient-to-r from-ink/75 via-ink/20 via-45% to-transparent lg:block" />
+      <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-ink/85 to-transparent lg:from-ink/70" />
+      <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-ink via-ink/50 to-transparent" />
     </div>
   );
 }
@@ -504,8 +506,12 @@ function RoundControl({
       className="grid h-11 w-11 shrink-0 place-items-center rounded-full transition active:scale-95"
     >
       <span
-        className={`grid h-[34px] w-[34px] place-items-center rounded-full border ${
-          invite ? "animate-pulse-dot border-gold/70 text-gold" : active ? "border-gold/50 bg-gold/10 text-gold" : "border-line text-cream"
+        className={`grid h-[34px] w-[34px] place-items-center rounded-full ${
+          invite
+            ? "animate-pulse-dot border border-gold/70 text-gold"
+            : active
+              ? "glass-raised bg-gold/15 text-gold"
+              : "glass-raised text-cream"
         }`}
       >
         {children}
@@ -532,17 +538,17 @@ export function NowShowing() {
   return (
     <aside
       aria-label="Now showing"
-      className="fade-in relative overflow-hidden rounded-2xl border border-white/10 bg-ink/60 lg:w-[21.5rem] lg:shrink-0"
+      className="glass fade-in relative overflow-hidden rounded-2xl lg:w-[21.5rem] lg:shrink-0"
     >
       {/* Below lg: one line, the trailer's controls and the way in, at one
           fixed height, which the hero reserves. */}
       <div className="flex items-center gap-0.5 p-[7px] pl-3.5 sm:pl-4 lg:hidden">
-        <div className="min-w-0 flex-1 pr-1">
-          <p className="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-[0.18em] text-gold sm:text-[10px]">
+        <div className="over-picture min-w-0 flex-1 pr-1">
+          <p className="flex items-center gap-1.5 text-[9px] font-semibold uppercase tracking-[0.18em] text-gold sm:text-[10px]">
             {revealed ? <LiveDot /> : null}
             Now showing
           </p>
-          <p className="mt-0.5 truncate text-[13px] font-medium">{item.title}</p>
+          <p className="mt-0.5 truncate text-[12px] font-medium">{item.title}</p>
         </div>
         <RoundControl label={playLabel} onClick={togglePlay} invite={blocked}>
           <PlayPauseIcon playing={showing} />
@@ -565,7 +571,7 @@ export function NowShowing() {
       </div>
 
       {/* A wide screen: the whole card. */}
-      <div className="hidden p-5 lg:block">
+      <div className="over-picture hidden p-5 lg:block">
         <p className="flex items-center gap-2 text-[10.5px] font-semibold uppercase tracking-[0.18em] text-gold">
           {revealed ? <LiveDot /> : null}
           Now showing · Trending
@@ -602,8 +608,10 @@ export function NowShowing() {
       </div>
 
       {revealed ? (
-        <div className="absolute inset-x-0 bottom-0 h-[2px] bg-white/10" aria-hidden>
-          <div className="h-full bg-cream/80 transition-[width] duration-500" style={{ width: `${progress * 100}%` }} />
+        // No track, and kept in from the edges, which fade into the trailer:
+        // a line along the edge would read as a border.
+        <div className="absolute inset-x-5 bottom-1.5 h-[2px]" aria-hidden>
+          <div className="h-full rounded-full bg-cream/70 transition-[width] duration-500" style={{ width: `${progress * 100}%` }} />
         </div>
       ) : null}
     </aside>

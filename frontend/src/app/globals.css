@@ -107,6 +107,72 @@ body {
 }
 
 /*
+ * Glass over the trailer, blended into it: no edge of any kind. No border, no
+ * inset highlight and no drop shadow (each draws the card's outline), and the
+ * tint itself is feathered out toward every side, so the picture runs into it
+ * with no line where the card starts. The gloss is a highlight and a diagonal
+ * sheen inside. Drawn, never backdrop-filter: a blur over a playing video is
+ * redone every frame, which is what makes a phone stutter. The fill is on
+ * ::before so the mask feathers it and not the words on it. .glass-inset is
+ * the recessed track inside (tabs, a field). In the components layer, so
+ * utilities (a focus border, say) still win.
+ */
+@layer components {
+.glass {
+  position: relative;
+  isolation: isolate;
+}
+
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(55% 85% at 24% 18%, rgb(255 255 255 / 0.17), transparent 70%),
+    linear-gradient(115deg, transparent 42%, rgb(255 255 255 / 0.07) 56%, transparent 70%),
+    rgb(10 10 12 / 0.45);
+  -webkit-mask-image:
+    linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent),
+    linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  -webkit-mask-composite: source-in;
+  mask-image:
+    linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent),
+    linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 20px), transparent);
+  mask-composite: intersect;
+}
+
+.glass-inset {
+  background: rgb(0 0 0 / 0.3);
+}
+
+/* A raised piece on glass: the selected tab, a button. */
+.glass-raised {
+  background: linear-gradient(to bottom, rgb(255 255 255 / 0.24), rgb(255 255 255 / 0.1) 60%, rgb(255 255 255 / 0.13));
+  box-shadow: 0 6px 16px -8px rgb(0 0 0 / 0.8);
+}
+
+/* Words over the picture keep a shadow, whatever frame is behind them. */
+.over-picture {
+  text-shadow: 0 1px 2px rgb(0 0 0 / 0.55);
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .glass::before {
+    background: var(--color-panel);
+    border-radius: inherit;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .glass-inset {
+    background: var(--color-ink);
+  }
+}
+}
+
+/*
  * Before the session is known, the home greeting draws both of its versions
  * and these show the one the first-paint hint picked (layout.tsx sets
  * data-auth and --wp-name on <html>), so the page never shifts to swap them.

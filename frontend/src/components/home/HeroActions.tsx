@@ -35,8 +35,9 @@ export function StartPartyButton({ className = "" }: { className?: string }) {
       </Button>
 
       {error ? (
-        // col-span-full: on a phone this sits in the card's two-column row.
-        <div className="relative col-span-full mt-3 max-w-md md:mt-4">
+        // Its own line wherever the button sits: col-span-full in the start
+        // card's grid row, basis-full in the phone's floating card.
+        <div className="relative col-span-full mt-3 max-w-md basis-full md:mt-4">
           <Banner tone="error">{error}</Banner>
         </div>
       ) : null}
@@ -46,15 +47,21 @@ export function StartPartyButton({ className = "" }: { className?: string }) {
   );
 }
 
-/** A friend's code, straight into their room. Joining needs no account. */
-export function JoinCodeForm({ className = "" }: { className?: string }) {
+/**
+ * A friend's code, straight into their room. Joining needs no account.
+ * `glass`: set into a glass card (the phone's floating one) instead of the page.
+ */
+export function JoinCodeForm({ className = "", glass = false }: { className?: string; glass?: boolean }) {
   const router = useRouter();
   const [joinCode, setJoinCode] = useState("");
   const codeReady = joinCode.trim().length >= 4;
 
   return (
     <form
-      className={`flex h-[52px] min-w-0 items-center gap-2.5 rounded-full border border-line-strong bg-panel p-1 pl-4 transition focus-within:border-gold/45 sm:h-14 sm:p-1.5 sm:pl-5 ${className}`}
+      className={`flex h-[52px] min-w-0 items-center gap-2.5 rounded-full p-1 pl-4 transition focus-within:border-gold/45 sm:h-14 sm:p-1.5 sm:pl-5 ${
+        // Borderless on glass; the transparent border is there for focus.
+        glass ? "glass-inset border border-transparent" : "border border-line-strong bg-panel"
+      } ${className}`}
       onSubmit={(event) => {
         event.preventDefault();
         if (codeReady) router.push(`/room/${joinCode.trim().toUpperCase()}`);
@@ -81,9 +88,15 @@ export function JoinCodeForm({ className = "" }: { className?: string }) {
         // the form wider than a 320px phone. flex-1 gives it the room back.
         // The text stays 16px (smaller and iOS zooms in on focus); only the
         // placeholder is drawn smaller on a phone.
-        className="w-0 min-w-0 flex-1 bg-transparent font-mono text-base uppercase tracking-[0.16em] text-cream placeholder:font-sans placeholder:text-[14px] placeholder:normal-case placeholder:tracking-normal placeholder:text-faint focus:outline-none sm:placeholder:text-base"
+        className="w-0 min-w-0 flex-1 bg-transparent font-mono text-base uppercase tracking-[0.16em] text-cream placeholder:font-sans placeholder:text-[13px] placeholder:normal-case placeholder:tracking-normal placeholder:text-faint focus:outline-none sm:placeholder:text-base"
       />
-      <Button type="submit" size="md" variant={codeReady ? "primary" : "secondary"} disabled={!codeReady} className="px-5 lg:px-6">
+      <Button
+        type="submit"
+        size="md"
+        variant={codeReady ? "primary" : glass ? "ghost" : "secondary"}
+        disabled={!codeReady}
+        className={`px-5 lg:px-6 ${glass && !codeReady ? "glass-raised" : ""}`}
+      >
         Join
       </Button>
     </form>
