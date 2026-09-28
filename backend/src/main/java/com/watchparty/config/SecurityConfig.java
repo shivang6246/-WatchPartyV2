@@ -51,6 +51,14 @@ public class SecurityConfig {
                         // The one room endpoint a stranger reaches before holding
                         // any token: the room code alone opens it (rate-limited).
                         .requestMatchers(HttpMethod.GET, "/api/v1/rooms/*/preview", "/api/rooms/*/preview").permitAll()
+                        // The home screen's trailer backdrop, for signed-out visitors
+                        // too: one cache key held for hours, so no caller can make it
+                        // spend quota. Never open search this way.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/catalog/youtube/trailers", "/api/catalog/youtube/trailers").permitAll()
+                        // Which sources exist and whether YouTube search is set up:
+                        // server configuration, no parameters, no quota. Public pages
+                        // (home, Discover) read it before anyone signs in.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/catalog/sources", "/api/catalog/sources").permitAll()
                         // The handshake is unauthenticated; the STOMP CONNECT frame
                         // carries a single-use ticket. See StompAuthInterceptor.
                         .requestMatchers("/ws/**").permitAll()

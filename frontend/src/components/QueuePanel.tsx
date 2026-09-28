@@ -51,7 +51,7 @@ export default function QueuePanel({ queue, isHost, onAdd, onRemove, onMove, onS
       {queue.length === 0 ? (
         <div className="grid flex-1 place-items-center px-6 py-12 text-center">
           <div>
-            <p className="font-serif text-2xl italic text-cream/80">Nothing on the bill yet.</p>
+            <p className="font-serif text-2xl italic text-cream/85">Nothing on the bill yet.</p>
             <p className="mt-1 text-sm text-faint">
               {isHost ? "Queue videos and they play one after another." : "The host can line up what plays next."}
             </p>
@@ -71,6 +71,9 @@ export default function QueuePanel({ queue, isHost, onAdd, onRemove, onMove, onS
                 ) : null}
               </div>
               <div className="min-w-0 flex-1">
+                {index === 0 ? (
+                  <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-gold">Next</p>
+                ) : null}
                 <p className="line-clamp-2 text-[13px] font-medium leading-snug">{item.title ?? item.videoUrl}</p>
                 <p className="mt-0.5 truncate text-[11px] text-faint">
                   {[item.author, item.addedByName ? `added by ${item.addedByName}` : null].filter(Boolean).join(" · ")}

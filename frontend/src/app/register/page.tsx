@@ -48,7 +48,7 @@ function RegisterForm() {
       eyebrow={roomCode ? `Room ${roomCode}` : "Get a ticket"}
       title={
         <>
-          Your own <span className="font-serif font-normal italic text-cobalt-soft">screen.</span>
+          Your own <span className="font-serif font-normal italic">screen.</span>
         </>
       }
       subtitle={
@@ -59,7 +59,7 @@ function RegisterForm() {
       footer={
         <>
           Already have one?{" "}
-          <Link className="font-medium text-cobalt-soft underline-offset-4 hover:underline" href="/login">
+          <Link className="font-medium text-gold underline-offset-4 hover:underline" href="/login">
             Sign in
           </Link>
         </>

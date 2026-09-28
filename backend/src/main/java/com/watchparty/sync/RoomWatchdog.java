@@ -162,6 +162,35 @@ public class RoomWatchdog {
                 .ifPresent(host -> startHostGrace(room, host, now));
     }
 
+    // ---- Presence ---------------------------------------------------------
+
+    /**
+     * Notices members whose heartbeats stopped without a disconnect (a dead
+     * network, a closed lid) within seconds: their last heartbeat plus
+     * {@code app.room.member-heartbeat-ttl}, plus at most one sweep. The
+     * snapshot sweep's audit alone would take up to half a minute more. Only
+     * rooms with someone in their presence set are walked, from Redis, so an
+     * idle server does no work here.
+     */
+    @Scheduled(fixedDelayString = "${app.room.presence-sweep-ms:2000}")
+    public void sweepPresence() {
+        for (UUID roomId : stateService.roomsWithPresence()) {
+            runSafely("presence sweep", roomId, () -> expirePresence(roomId));
+        }
+    }
+
+    void expirePresence(UUID roomId) {
+        Set<UUID> gone = stateService.expirePresence(roomId);
+        for (UUID memberId : gone) {
+            events.publish(roomId, "members", Map.of("type", "left", "memberId", memberId.toString()));
+        }
+        for (UUID memberId : gone) {
+            // The same follow-up as a disconnect: a host hand-off, or an empty room.
+            onMemberGone(roomId, memberId);
+        }
+        stateService.forgetIfEmpty(roomId);
+    }
+
     // ---- Deadlines --------------------------------------------------------
 
     @Scheduled(fixedDelayString = "${app.room.watchdog-interval-ms:5000}")

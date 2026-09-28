@@ -6,12 +6,13 @@ import dynamic from "next/dynamic";
 import { Suspense, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ChatPanel from "@/components/ChatPanel";
-import InviteButton from "@/components/InviteBar";
+import InviteButton, { RoomCodeChip } from "@/components/InviteBar";
 import JoinGate from "@/components/JoinGate";
-import MembersPanel, { WatchingSummary } from "@/components/MembersPanel";
+import MembersPanel from "@/components/MembersPanel";
 import PlayerSurface from "@/components/PlayerSurface";
 import QueuePanel from "@/components/QueuePanel";
 import ReactionBar from "@/components/ReactionBar";
+import SyncStatus from "@/components/SyncStatus";
 import { Accent, Avatar, Banner, Button, Eyebrow, IconButton, Logo, Spinner } from "@/components/ui";
 import { useRoom, type RoomSession } from "@/hooks/useRoom";
 import { useAuth } from "@/lib/auth-context";
@@ -32,7 +33,7 @@ function HostAwayBanner({ until }: { until: number }) {
       The host lost their connection.{" "}
       {seconds > 0 ? (
         <>
-          If they are not back in <span className="font-mono text-cobalt-soft">{seconds}s</span>, someone here with an
+          If they are not back in <span className="font-mono text-gold">{seconds}s</span>, someone here with an
           account takes over.
         </>
       ) : (
@@ -43,7 +44,7 @@ function HostAwayBanner({ until }: { until: number }) {
 }
 
 /** The host's room controls, tucked behind one button. */
-function HostMenu({ session }: { session: RoomSession }) {
+function HostMenu({ session, onChangeVideo }: { session: RoomSession; onChangeVideo: () => void }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement | null>(null);
 
@@ -72,18 +73,32 @@ function HostMenu({ session }: { session: RoomSession }) {
         aria-expanded={open}
         active={open}
         onClick={() => setOpen(!open)}
-        className="border-transparent bg-transparent"
+        className="h-11 w-11"
       >
-        <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="currentColor" aria-hidden>
-          <circle cx="5" cy="12" r="1.8" />
-          <circle cx="12" cy="12" r="1.8" />
-          <circle cx="19" cy="12" r="1.8" />
+        <svg viewBox="0 0 24 24" className="h-[17px] w-[17px]" fill="currentColor" aria-hidden>
+          <circle cx="5" cy="12" r="1.7" />
+          <circle cx="12" cy="12" r="1.7" />
+          <circle cx="19" cy="12" r="1.7" />
         </svg>
       </IconButton>
       {open ? (
-        <div className="sheet-in absolute right-0 top-12 z-40 w-[min(16rem,calc(100vw-1.5rem))] rounded-2xl border border-line-strong bg-panel p-1.5 shadow-[0_24px_60px_-12px_rgb(0_0_0/0.8)]">
-          <p className="px-3 pb-1 pt-2 font-mono text-[10px] uppercase tracking-[0.22em] text-faint">Host controls</p>
+        <div className="sheet-in absolute right-0 top-13 z-40 w-[min(16rem,calc(100vw-1.5rem))] rounded-2xl border border-line-strong bg-panel p-1.5 shadow-[0_24px_60px_-12px_rgb(0_0_0/0.85)]">
+          <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-gold">Host controls</p>
           <p className="px-3 pb-2 text-[11px] text-muted">Only you can play, pause and seek.</p>
+          {/* A phone's header has no room for the "+", so it lives here. */}
+          <button
+            type="button"
+            className={`${item} sm:hidden`}
+            onClick={() => {
+              setOpen(false);
+              onChangeVideo();
+            }}
+          >
+            <svg viewBox="0 0 24 24" className="h-4 w-4 text-gold" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+              <path d="M12 5v14M5 12h14" strokeLinecap="round" />
+            </svg>
+            Change what&apos;s playing
+          </button>
           <button
             type="button"
             className={item}
@@ -92,7 +107,7 @@ function HostMenu({ session }: { session: RoomSession }) {
               void session.patchRoom({ rotateInviteToken: true });
             }}
           >
-            <svg viewBox="0 0 24 24" className="h-4 w-4 text-cobalt" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <svg viewBox="0 0 24 24" className="h-4 w-4 text-gold" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
               <path d="M4 12a8 8 0 0 1 13.7-5.6L20 8.7M20 4v4.7h-4.7M20 12a8 8 0 0 1-13.7 5.6L4 15.3M4 20v-4.7h4.7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <span className="flex-1">
@@ -233,12 +248,13 @@ function Room() {
     return (
       <main className="spotlight grid min-h-dvh place-items-center px-4">
         <div className="flex flex-col items-center gap-6 text-sm text-muted">
-          <div className="relative grid aspect-square w-28 place-items-center">
-            <div className="halo inset-0" aria-hidden />
+          <div className="relative grid aspect-square w-32 place-items-center">
+            <div className="halo halo-dim inset-0" aria-hidden />
+            <div className="halo inset-[22%]" aria-hidden />
             <Logo compact />
           </div>
           <span className="flex items-center gap-2.5">
-            <Spinner className="h-4 w-4 text-cobalt-soft" />
+            <Spinner className="h-4 w-4 text-gold" />
             Joining the room…
           </span>
         </div>
@@ -260,7 +276,7 @@ function Room() {
         </header>
         <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center pb-16">
           <Eyebrow>Room {code}</Eyebrow>
-          <h1 className="mt-2 text-4xl font-semibold tracking-[-0.03em]">
+          <h1 className="mt-2 font-serif text-5xl font-normal tracking-[-0.015em]">
             This screen is <Accent>dark.</Accent>
           </h1>
           <div className="mt-6">
@@ -279,9 +295,9 @@ function Room() {
   const room = session.room;
   const unread = unreadCount;
   const presentCount = session.members.filter((member) => member.present).length;
-  const behindCount = session.behindMembers.size;
+  const behindCount = session.members.filter((member) => member.present && session.behindMembers.has(member.id)).length;
   const connectionDot =
-    session.connection === "connected" ? "bg-sage" : session.connection === "connecting" ? "bg-cobalt" : "bg-ember";
+    session.connection === "connected" ? "bg-gold" : session.connection === "connecting" ? "bg-muted" : "bg-ember";
   const tabs: { id: Tab; label: string; count?: number; badge?: boolean }[] = [
     { id: "chat", label: "Chat", count: unread || undefined, badge: unread > 0 },
     { id: "queue", label: "Up next", count: room.queue?.length || undefined },
@@ -289,7 +305,7 @@ function Room() {
   ];
 
   const guestNote = !user ? (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-panel-2 px-4 py-3">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-panel px-4 py-3">
       <p className="text-sm text-muted">
         <span className="text-cream">Watching as a guest.</span> Make an account to keep this seat and host your own
         rooms.
@@ -308,30 +324,37 @@ function Room() {
      * panel filling what is left, with the message box at the bottom. A phone
      * on its side puts them side by side. A wide screen scrolls as a page.
      */
-    <main className="mx-auto flex h-dvh w-full max-w-[1440px] flex-col overflow-hidden lg:h-auto lg:min-h-dvh lg:overflow-visible lg:px-6 lg:pb-8">
-      <header className="flex h-14 shrink-0 items-center gap-1 px-1.5 sm:gap-2 sm:px-3 lg:h-auto lg:gap-3 lg:px-0 lg:py-5">
+    <main className="spotlight mx-auto flex h-dvh w-full max-w-[1440px] flex-col overflow-hidden lg:h-auto lg:min-h-dvh lg:overflow-visible lg:px-8 lg:pb-8">
+      <header className="flex h-[3.75rem] shrink-0 items-center gap-2 px-2.5 lg:h-auto lg:gap-4 lg:px-0 lg:py-5">
         <Link
           href="/"
           aria-label="Leave the room"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-cream transition hover:bg-white/[0.06] active:scale-95"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full border border-line text-cream transition hover:border-line-strong hover:bg-white/[0.04] active:scale-95 lg:hidden"
         >
-          <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <svg viewBox="0 0 24 24" className="h-[19px] w-[19px]" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
             <path d="m15 6-6 6 6 6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </Link>
+        <Link href="/" aria-label="WatchParty home" className="hidden shrink-0 lg:block">
+          <Logo />
+        </Link>
+        <span className="hidden h-7 w-px shrink-0 bg-line-strong lg:block" aria-hidden />
 
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[15px] font-semibold leading-tight sm:text-base lg:text-lg">
+          <h1 className="truncate text-[15px] font-semibold leading-tight tracking-[-0.01em] lg:text-base">
             {room.videoTitle ?? room.title}
           </h1>
-          <p className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted">
+          <p className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-muted">
             <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${connectionDot}`} aria-hidden />
             <span className="truncate">
               {presentCount} watching
-              {behindCount > 0 ? <span className="text-cobalt-soft"> · {behindCount} catching up</span> : null}
-              <span className="sm:hidden"> · {room.code}</span>
+              {behindCount > 0 ? <span className="text-gold-soft"> · {behindCount} catching up</span> : null}
+              <span className="lg:hidden">
+                {" "}
+                · <span className="font-mono tracking-[0.12em] text-cream">{room.code}</span>
+              </span>
               {session.isHost ? (
-                " · you're the host"
+                <span className="hidden sm:inline"> · you&apos;re the host</span>
               ) : room.videoAuthor ? (
                 <span className="hidden sm:inline"> · {room.videoAuthor}</span>
               ) : null}
@@ -339,20 +362,17 @@ function Room() {
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-0.5 sm:gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 lg:gap-2.5">
+          <RoomCodeChip room={room} />
           <InviteButton room={room} />
           {session.isHost ? (
             <>
-              <IconButton
-                aria-label="Change what is playing"
-                onClick={() => setChanging(true)}
-                className="border-transparent bg-transparent sm:border-line sm:bg-panel/80"
-              >
-                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden>
+              <IconButton aria-label="Change what is playing" onClick={() => setChanging(true)} className="hidden h-11 w-11 sm:grid">
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
                   <path d="M12 5v14M5 12h14" strokeLinecap="round" />
                 </svg>
               </IconButton>
-              <HostMenu session={session} />
+              <HostMenu session={session} onChangeVideo={() => setChanging(true)} />
             </>
           ) : null}
         </div>
@@ -365,53 +385,58 @@ function Room() {
         </div>
       ) : null}
 
-      <div className="flex min-h-0 flex-1 flex-col land:flex-row lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,1fr)_400px]">
-        <div className="shrink-0 land:min-w-0 land:flex-1 land:overflow-y-auto lg:space-y-4">
+      <div className="flex min-h-0 flex-1 flex-col land:flex-row lg:grid lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start lg:gap-7 xl:grid-cols-[minmax(0,1fr)_392px]">
+        <div className="shrink-0 land:min-w-0 land:flex-1 land:overflow-y-auto lg:space-y-5">
           <PlayerSurface session={session} />
 
-          <div className="hidden flex-wrap items-center justify-between gap-3 lg:flex">
+          {/* Phone: where the room stands, straight under the picture. */}
+          <div className="px-4 pb-1 pt-3.5 lg:hidden land:hidden">
+            <SyncStatus session={session} />
+          </div>
+
+          <div className="hidden flex-wrap items-center justify-between gap-x-6 gap-y-3 lg:flex">
             <ReactionBar onReact={session.react} disabled={session.selfMuted || session.connection !== "connected"} />
-            <WatchingSummary members={session.members} behindCount={behindCount} />
+            <div className="min-w-0 max-w-[30rem] flex-1">
+              <SyncStatus session={session} avatars />
+            </div>
           </div>
 
           {guestNote ? <div className="hidden lg:block">{guestNote}</div> : null}
         </div>
 
         {/* One panel, three tabs: the conversation, what plays next, the audience. */}
-        <aside className="flex min-h-0 flex-1 flex-col border-t border-line bg-panel land:w-[min(340px,42vw)] land:flex-none land:border-l land:border-t-0 lg:sticky lg:top-4 lg:h-[calc(100dvh-7.5rem)] lg:min-h-[480px] lg:flex-none lg:overflow-hidden lg:rounded-2xl lg:border">
-          <div className="flex shrink-0 items-stretch border-b border-line" role="tablist" aria-label="Room panels">
-            {tabs.map((entry) => {
-              const active = tab === entry.id;
-              return (
-                <button
-                  key={entry.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={active}
-                  onClick={() => setTab(entry.id)}
-                  className={`relative flex h-12 flex-1 items-center justify-center gap-1.5 text-[13px] font-medium transition ${
-                    active ? "text-cream" : "text-muted hover:text-cream"
-                  }`}
-                >
-                  {entry.label}
-                  {entry.count ? (
-                    <span
-                      className={`min-w-5 rounded-full px-1.5 py-px text-center font-mono text-[10px] ${
-                        entry.badge ? "bg-cobalt text-white" : "bg-white/[0.07] text-muted"
-                      }`}
-                    >
-                      {entry.count > 99 ? "99+" : entry.count}
-                    </span>
-                  ) : null}
-                  <span
-                    className={`absolute inset-x-4 bottom-0 h-0.5 rounded-full bg-cobalt transition-opacity ${
-                      active ? "opacity-100" : "opacity-0"
+        <aside className="flex min-h-0 flex-1 flex-col land:w-[min(340px,42vw)] land:flex-none land:border-l land:border-line land:bg-panel lg:sticky lg:top-4 lg:h-[calc(100dvh-7.5rem)] lg:min-h-[480px] lg:flex-none lg:overflow-hidden lg:rounded-[20px] lg:border lg:border-line lg:bg-[#111112]">
+          <div className="flex shrink-0 items-center gap-2 px-3 pt-3 lg:px-3.5 lg:pt-3.5">
+            <div className="flex h-11 flex-1 gap-[3px] rounded-[14px] border border-line bg-panel p-[3px] lg:bg-ink" role="tablist" aria-label="Room panels">
+              {tabs.map((entry) => {
+                const active = tab === entry.id;
+                return (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => setTab(entry.id)}
+                    className={`flex flex-1 items-center justify-center gap-1.5 rounded-[11px] text-[13px] transition ${
+                      active
+                        ? "bg-panel-3 font-semibold text-cream shadow-[inset_0_0_0_1px_rgb(255_255_255/0.06)]"
+                        : "font-medium text-muted hover:text-cream"
                     }`}
-                    aria-hidden
-                  />
-                </button>
-              );
-            })}
+                  >
+                    {entry.label}
+                    {entry.count ? (
+                      <span
+                        className={`min-w-[18px] rounded-full px-1.5 py-px text-center text-[10px] ${
+                          entry.badge ? "bg-gold font-semibold text-ink" : "text-faint"
+                        }`}
+                      >
+                        {entry.count > 99 ? "99+" : entry.count}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
             {/* Desktop notifications only fire from a hidden desktop tab; a phone has no use for the bell. */}
             {typeof Notification !== "undefined" ? (
               <button
@@ -419,8 +444,8 @@ function Room() {
                 onClick={() => void toggleNotifications()}
                 aria-label={notifyOn ? "Turn off desktop notifications" : "Notify me about new messages"}
                 title={notifyOn ? "Notifications on" : "Notify me about new messages"}
-                className={`hidden w-12 shrink-0 place-items-center transition lg:grid ${
-                  notifyOn ? "text-cobalt-soft" : "text-faint hover:text-cream"
+                className={`hidden h-11 w-11 shrink-0 place-items-center rounded-full border border-line transition lg:grid ${
+                  notifyOn ? "text-gold" : "text-faint hover:text-cream"
                 }`}
               >
                 <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
@@ -464,6 +489,8 @@ function Room() {
                     selfMemberId={room.selfMemberId}
                     isHost={session.isHost}
                     onPatch={session.patchRoom}
+                    roomId={room.id}
+                    canBefriend={Boolean(user)}
                   />
                 </div>
               </div>

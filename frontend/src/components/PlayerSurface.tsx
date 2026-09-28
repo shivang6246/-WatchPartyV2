@@ -13,9 +13,11 @@ const SKIP_MS = 10_000;
 const SEEK_HOLD_MS = 1500;
 
 /**
- * The stage: the player, lit from behind by its own artwork, with the room's
- * transport underneath. The scrub bar reads the same projection as the sync
- * engine, so the bar and the picture never disagree about where the room is.
+ * The stage. A YouTube room shows YouTube's own player with its own controls:
+ * what the host does there is sent to the room (see YouTubePlayer). A direct
+ * video link has no controls of its own worth keeping, so it gets the room's
+ * transport underneath, whose scrub bar reads the same projection as the
+ * sync engine.
  */
 export default function PlayerSurface({ session }: { session: RoomSession }) {
   const { room, canControl, playing, durationMs, diagnostics } = session;
@@ -125,7 +127,7 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
   }
 
   // Space or K plays and pauses, the arrows jump ten seconds, unless the
-  // viewer is typing somewhere.
+  // viewer is typing somewhere. Inside YouTube's frame its own keys apply.
   const keys = useRef({ toggle, skip, fullscreen: toggleFullscreen, mute: toggleMuted });
   keys.current = { toggle, skip, fullscreen: toggleFullscreen, mute: toggleMuted };
   useEffect(() => {
@@ -161,45 +163,23 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
   const holding = held !== null && Date.now() < held.until && Math.abs(position - held.target) > 1200;
   const shown = scrubbing ?? (holding && held ? held.target : position);
   const blocked = Boolean(diagnostics?.blocked && playing);
-  const embedded = Boolean(
-    (room.platform === "youtube" && room.videoRef) || (room.platform === "hosted" && room.videoUrl),
-  );
+  const youtube = room.platform === "youtube" && Boolean(room.videoRef);
+  const hosted = room.platform === "hosted" && Boolean(room.videoUrl);
   const duration = durationMs ?? 0;
   const progress = duration ? Math.min(100, (shown / duration) * 100) : 0;
-  const drifting = diagnostics ? Math.abs(diagnostics.driftMs) > 250 : false;
-
-  const status =
-    session.connection === "connected"
-      ? { label: drifting ? "Catching up" : "In sync", dot: drifting ? "bg-cobalt" : "bg-sage" }
-      : session.connection === "connecting"
-        ? { label: "Connecting", dot: "bg-cobalt" }
-        : { label: "Reconnecting", dot: "bg-ember" };
 
   return (
     <section ref={stageRef} className="stage @container relative land:mx-auto land:max-w-[calc((100svh-10rem)*16/9)]">
-      {/* Ambilight: the artwork, blurred and spilled behind the screen. Only on
-          a wide screen: a phone's player is edge to edge with nothing to spill onto,
-          and a big blur is the most expensive thing a phone could paint here. */}
-      {room.videoThumbnail ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={room.videoThumbnail}
-          alt=""
-          aria-hidden
-          loading="lazy"
-          className="pointer-events-none absolute -inset-x-8 -top-10 -z-10 hidden h-[calc(100%+4rem)] w-[calc(100%+4rem)] object-cover opacity-30 blur-[70px] saturate-150 lg:block"
-        />
-      ) : null}
-
-      <div className="stage-screen relative overflow-hidden bg-black lg:rounded-[var(--radius-screen)] lg:border lg:border-white/10 lg:shadow-[0_0_0_1px_rgb(59_91_255/0.12),0_0_60px_-20px_rgb(59_91_255/0.4),0_40px_100px_-30px_rgb(0_0_0/0.95)]">
-        {room.platform === "youtube" && room.videoRef ? (
+      <div className="stage-screen relative mx-2.5 overflow-hidden rounded-[18px] border border-white/[0.09] bg-black shadow-[0_28px_60px_-24px_rgb(0_0_0/0.9)] land:mx-0 land:rounded-none land:border-0 lg:mx-0 lg:rounded-[var(--radius-screen)] lg:shadow-[0_40px_100px_-40px_rgb(0_0_0/0.95)]">
+        {youtube && room.videoRef ? (
           <YouTubePlayer
             videoId={room.videoRef}
             onHandle={session.attachPlayer}
             onEnded={session.reportEnded}
             onBuffering={session.setBuffering}
+            onViewerAction={session.viewerAction}
           />
-        ) : room.platform === "hosted" && room.videoUrl ? (
+        ) : hosted && room.videoUrl ? (
           <HostedPlayer
             src={room.videoUrl}
             onHandle={session.attachPlayer}
@@ -215,12 +195,12 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
             />
           </div>
         ) : (
-          <div className="relative grid aspect-video w-full place-items-center overflow-hidden p-5 text-center">
-            <div className="absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_40%,rgb(59_91_255/0.16),transparent_70%)]" />
-            <div className="halo halo-dim left-1/2 top-1/2 w-[min(46%,22rem)] -translate-x-1/2 -translate-y-1/2" aria-hidden />
+          <div className="relative grid aspect-video w-full place-items-center overflow-hidden bg-stage p-5 text-center">
+            <div className="halo halo-dim left-1/2 top-1/2 w-[min(62%,30rem)] -translate-x-1/2 -translate-y-1/2" aria-hidden />
+            <div className="halo left-1/2 top-1/2 w-[min(40%,19rem)] -translate-x-1/2 -translate-y-1/2" aria-hidden />
             <div className="relative max-w-sm">
-              <p className="text-lg font-semibold tracking-tight @xl:text-2xl">
-                Playing on the <span className="font-serif font-normal italic text-cobalt-soft">desktop extension</span>
+              <p className="font-serif text-xl @xl:text-3xl">
+                Playing on the <span className="italic">desktop extension</span>
               </p>
               <p className="mt-2 text-xs leading-relaxed text-muted @xl:mt-3 @xl:text-sm">
                 This service is DRM-protected and has no embeddable player. Chat and the guest list work
@@ -230,9 +210,10 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
           </div>
         )}
 
-        {/* The player's own click-to-pause would pause only this screen, so a
-            click on the picture is caught here and goes to the whole room. */}
-        {embedded ? (
+        {/* A video element's own click would pause only this screen, so a
+            click on the picture is caught here and goes to the whole room.
+            YouTube keeps its controls: its clicks are read in YouTubePlayer. */}
+        {hosted ? (
           <button
             type="button"
             onClick={toggle}
@@ -241,10 +222,10 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
           />
         ) : null}
 
-        {session.buffering && !blocked ? (
+        {hosted && session.buffering && !blocked ? (
           <div className="pointer-events-none absolute inset-0 grid place-items-center">
             <span className="flex items-center gap-2.5 rounded-full bg-ink/80 px-4 py-2 text-xs text-cream">
-              <Spinner className="h-4 w-4 text-cobalt" />
+              <Spinner className="h-4 w-4 text-gold" />
               Buffering
             </span>
           </div>
@@ -255,9 +236,9 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
             <button
               type="button"
               onClick={() => session.resume()}
-              className="pointer-events-auto flex items-center gap-3 rounded-full bg-cobalt py-2.5 pl-2.5 pr-5 text-sm font-semibold text-white shadow-[0_12px_40px_-8px_rgb(59_91_255/0.8)] transition hover:bg-cobalt-bright active:scale-95"
+              className="pointer-events-auto flex items-center gap-3 rounded-full bg-cream py-2.5 pl-2.5 pr-5 text-sm font-semibold text-ink shadow-[0_16px_40px_-12px_rgb(0_0_0/0.9)] transition hover:bg-white active:scale-95"
             >
-              <span className="grid h-8 w-8 place-items-center rounded-full bg-white/15">
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-ink/10">
                 <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4 fill-current" aria-hidden>
                   <path d="M8 5.8v12.4c0 .8.9 1.3 1.6.8l9.4-6.2a1 1 0 0 0 0-1.6L9.6 5c-.7-.5-1.6 0-1.6.8Z" />
                 </svg>
@@ -272,7 +253,7 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
           {session.reactions.map((reaction) => (
             <span
               key={reaction.id}
-              className="reaction-float absolute bottom-6 flex flex-col items-center"
+              className="reaction-float absolute bottom-14 flex flex-col items-center"
               style={{ left: `${reaction.x}%` }}
             >
               <span className="text-3xl drop-shadow-[0_4px_12px_rgb(0_0_0/0.6)] @xl:text-4xl">{reaction.emoji}</span>
@@ -283,178 +264,153 @@ export default function PlayerSurface({ session }: { session: RoomSession }) {
           ))}
         </div>
 
-      </div>
-
-      {/* Transport. Inside the stage element, so fullscreen keeps the room's
-          own controls rather than handing the viewer the bare player. It lays
-          itself out by the stage's width (a container query), not the
-          viewport's: a phone on its side is wide, but its player is not. */}
-      <div className="stage-transport border-b border-line bg-ink px-3 pb-2 pt-1 @xl:px-4 lg:mt-3 lg:rounded-2xl lg:border lg:bg-panel lg:py-3">
-        <div className="flex flex-wrap items-center gap-x-2 @xl:flex-nowrap @xl:gap-x-4">
-          {/* Row one on a phone: time, bar, length. Inline from sm up. */}
-          <div className="order-1 flex w-full items-center gap-3 @xl:order-2 @xl:w-auto @xl:flex-1">
-            <span className="w-11 shrink-0 font-mono text-[11px] tabular-nums text-cream/80 @xl:w-12 @xl:text-right @xl:text-xs">
-              {formatTime(shown)}
-            </span>
-
-            <div className="relative flex-1">
-              <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-cream/10 @xl:h-1.5">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-cobalt-deep via-cobalt to-cobalt-soft transition-[width] duration-200"
-                  style={{ width: `${progress}%` }}
-                />
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={duration || 1}
-                value={Math.min(shown, duration || 1)}
-                disabled={!canControl || !duration}
-                onChange={(event) => setScrubbing(Number(event.target.value))}
-                // Committed on release, whatever did the dragging: a mouse, a
-                // finger, or the arrow keys on a focused bar. Reading the value
-                // off the element avoids a stale scrubbing state.
-                onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
-                onTouchEnd={(event) => commitSeek(Number(event.currentTarget.value))}
-                onKeyUp={(event) => {
-                  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) {
-                    commitSeek(Number(event.currentTarget.value));
-                  }
-                }}
-                // The bar handles its own arrows; the page shortcut must not jump as well.
-                onKeyDown={(event) => event.stopPropagation()}
-                onBlur={(event) => {
-                  if (scrubbing !== null) commitSeek(Number(event.currentTarget.value));
-                }}
-                className="relative block w-full"
-                aria-label="Seek"
-              />
-            </div>
-
-            <span className="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums text-faint @xl:w-12 @xl:text-left @xl:text-xs">
-              {duration ? formatTime(duration) : "--:--"}
-            </span>
-          </div>
-
-          {/* Row two on a phone: play, where the room is, and this screen's own controls. */}
-          <div className="order-2 flex items-center gap-1 @xl:order-1 @xl:gap-3">
-            <SkipButton label="Back 10 seconds" disabled={!canControl} onClick={() => skip(-SKIP_MS)} back />
-            <button
-              type="button"
-              disabled={!canControl && !blocked}
-              onClick={toggle}
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cobalt text-white shadow-[0_8px_26px_-10px_rgb(59_91_255/0.8)] transition hover:bg-cobalt-bright active:scale-95 disabled:bg-panel-3 disabled:text-faint disabled:shadow-none @xl:h-12 @xl:w-12"
-              aria-label={playing ? "Pause" : "Play"}
-            >
-              {playing ? (
-                <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
-                  <rect x="6.5" y="5" width="3.8" height="14" rx="1.2" />
-                  <rect x="13.7" y="5" width="3.8" height="14" rx="1.2" />
-                </svg>
-              ) : (
-                <svg viewBox="0 0 24 24" className="ml-0.5 h-5 w-5 fill-current">
-                  <path d="M8 5.8v12.4c0 .8.9 1.3 1.6.8l9.4-6.2a1 1 0 0 0 0-1.6L9.6 5c-.7-.5-1.6 0-1.6.8Z" />
-                </svg>
-              )}
-            </button>
-            <SkipButton label="Forward 10 seconds" disabled={!canControl} onClick={() => skip(SKIP_MS)} />
-          </div>
-
-          <p className="order-3 flex min-w-0 flex-1 items-center gap-1.5 truncate pl-1.5 text-[11.5px] text-muted @xl:hidden">
-            <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${status.dot}`} aria-hidden />
-            <span className="truncate">{canControl ? status.label : `${status.label} · host has the remote`}</span>
-          </p>
-
-          <div className="order-4 ml-auto flex shrink-0 items-center gap-0.5 @xl:order-3 @xl:ml-1">
-            {/* Volume: the button alone on a phone, where the slider is a
-                worse target than the device's own keys. */}
-            <button
-              type="button"
-              onClick={toggleMuted}
-              aria-label={muted ? "Unmute" : "Mute"}
-              title={muted ? "Unmute (M)" : "Mute (M)"}
-              className="grid h-10 w-10 place-items-center rounded-full text-cream/80 transition hover:bg-white/[0.06] hover:text-cream active:scale-90 @xl:h-9 @xl:w-9"
-            >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.9" aria-hidden>
-                <path d="M11 5 6.5 9H3v6h3.5L11 19z" strokeLinejoin="round" />
-                {muted ? (
-                  <path d="m16 9.5 4 5m0-5-4 5" strokeLinecap="round" />
-                ) : (
-                  <>
-                    <path d="M15.5 9.2a4 4 0 0 1 0 5.6" strokeLinecap="round" />
-                    <path d="M18 7a7.5 7.5 0 0 1 0 10" strokeLinecap="round" className={volume > 0.5 ? "" : "opacity-30"} />
-                  </>
-                )}
-              </svg>
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.02}
-              value={muted ? 0 : volume}
-              onChange={(event) => applyVolume(Number(event.currentTarget.value))}
-              onKeyDown={(event) => event.stopPropagation()}
-              aria-label="Volume"
-              className="hidden w-20 @xl:block"
-              // The global range style leaves the track to the component: a
-              // filled cobalt level over a dim rail, 4px tall.
-              style={{
-                background: `linear-gradient(to right, var(--color-cobalt) ${(muted ? 0 : volume) * 100}%, var(--color-panel-3) ${(muted ? 0 : volume) * 100}%) center / 100% 4px no-repeat`,
-              }}
-            />
-
-            {/* Only where the player actually has a ladder to choose from. */}
-            {qualities.length > 1 ? (
-              <QualityMenu levels={qualities} current={quality} onPick={applyQuality} />
-            ) : null}
-
-            <button
-              type="button"
-              onClick={toggleFullscreen}
-              aria-label={fullscreen ? "Leave fullscreen" : "Fullscreen"}
-              title={fullscreen ? "Leave fullscreen (F)" : "Fullscreen (F)"}
-              className="grid h-10 w-10 place-items-center rounded-full text-cream/80 transition hover:bg-white/[0.06] hover:text-cream active:scale-90 @xl:h-9 @xl:w-9"
-            >
-              <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-                {fullscreen ? (
-                  <path d="M9 4v5H4m11-5v5h5M9 20v-5H4m11 5v-5h5" strokeLinecap="round" strokeLinejoin="round" />
-                ) : (
-                  <path d="M4 9V4h5M20 9V4h-5M4 15v5h5m11-5v5h-5" strokeLinecap="round" strokeLinejoin="round" />
-                )}
-              </svg>
-            </button>
-          </div>
-        </div>
-
-        <div className="mt-2.5 hidden flex-wrap items-center gap-x-4 gap-y-1 px-1 font-mono text-[10.5px] text-faint @xl:flex">
-          <span className="flex items-center gap-1.5 text-muted">
-            <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-            {status.label}
-          </span>
-          {!canControl ? (
-            <span className="flex items-center gap-1.5 text-cobalt-soft">
-              <svg viewBox="0 0 24 24" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden>
+        {/* Why a guest's pause did not stick. At the top, clear of YouTube's bar. */}
+        {session.hint ? (
+          <div className="pointer-events-none absolute inset-x-0 top-3 flex justify-center px-3" role="status">
+            <span className="fade-in flex items-center gap-2 rounded-full border border-white/10 bg-ink/85 px-3.5 py-1.5 text-xs text-cream">
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 text-gold" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <rect x="5" y="11" width="14" height="9" rx="2" />
                 <path d="M8 11V8a4 4 0 1 1 8 0v3" />
               </svg>
-              Host controls playback
+              {session.hint}
             </span>
-          ) : null}
-          {diagnostics ? (
-            <>
-              <span className={drifting ? "text-cobalt" : undefined}>
-                drift {diagnostics.driftMs > 0 ? "+" : ""}
-                {diagnostics.driftMs}ms
-              </span>
-              <span>rtt {diagnostics.rttMs}ms</span>
-              {diagnostics.correcting !== "none" ? (
-                <span className="text-cobalt-soft">{diagnostics.correcting === "rate" ? "nudging" : "seeking"}</span>
-              ) : null}
-            </>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
+
+      {/* The room's own transport, for a direct video link only. Inside the
+          stage element, so fullscreen keeps it. It lays itself out by the
+          stage's width (a container query), not the viewport's. */}
+      {hosted ? (
+        <div className="stage-transport mx-2.5 mt-2 rounded-2xl border border-line bg-panel px-3 pb-2 pt-1 @xl:px-4 land:mx-0 lg:mx-0 lg:mt-3 lg:py-3">
+          <div className="flex flex-wrap items-center gap-x-2 @xl:flex-nowrap @xl:gap-x-4">
+            <div className="order-1 flex w-full items-center gap-3 @xl:order-2 @xl:w-auto @xl:flex-1">
+              <span className="w-11 shrink-0 font-mono text-[11px] tabular-nums text-cream/80 @xl:w-12 @xl:text-right @xl:text-xs">
+                {formatTime(shown)}
+              </span>
+
+              <div className="relative flex-1">
+                <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-cream/10">
+                  <div className="h-full rounded-full bg-cream transition-[width] duration-200" style={{ width: `${progress}%` }} />
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 1}
+                  value={Math.min(shown, duration || 1)}
+                  disabled={!canControl || !duration}
+                  onChange={(event) => setScrubbing(Number(event.target.value))}
+                  // Committed on release, whatever did the dragging: a mouse, a
+                  // finger, or the arrow keys on a focused bar. Reading the value
+                  // off the element avoids a stale scrubbing state.
+                  onPointerUp={(event) => commitSeek(Number(event.currentTarget.value))}
+                  onTouchEnd={(event) => commitSeek(Number(event.currentTarget.value))}
+                  onKeyUp={(event) => {
+                    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End"].includes(event.key)) {
+                      commitSeek(Number(event.currentTarget.value));
+                    }
+                  }}
+                  // The bar handles its own arrows; the page shortcut must not jump as well.
+                  onKeyDown={(event) => event.stopPropagation()}
+                  onBlur={(event) => {
+                    if (scrubbing !== null) commitSeek(Number(event.currentTarget.value));
+                  }}
+                  className="relative block w-full"
+                  aria-label="Seek"
+                />
+              </div>
+
+              <span className="w-11 shrink-0 text-right font-mono text-[11px] tabular-nums text-faint @xl:w-12 @xl:text-left @xl:text-xs">
+                {duration ? formatTime(duration) : "--:--"}
+              </span>
+            </div>
+
+            <div className="order-2 flex items-center gap-1 @xl:order-1 @xl:gap-3">
+              <SkipButton label="Back 10 seconds" disabled={!canControl} onClick={() => skip(-SKIP_MS)} back />
+              <button
+                type="button"
+                disabled={!canControl && !blocked}
+                onClick={toggle}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-cream text-ink transition hover:bg-white active:scale-95 disabled:bg-panel-3 disabled:text-faint @xl:h-11 @xl:w-11"
+                aria-label={playing ? "Pause" : "Play"}
+              >
+                {playing ? (
+                  <svg viewBox="0 0 24 24" className="h-5 w-5 fill-current">
+                    <rect x="6.5" y="5" width="3.8" height="14" rx="1.2" />
+                    <rect x="13.7" y="5" width="3.8" height="14" rx="1.2" />
+                  </svg>
+                ) : (
+                  <svg viewBox="0 0 24 24" className="ml-0.5 h-5 w-5 fill-current">
+                    <path d="M8 5.8v12.4c0 .8.9 1.3 1.6.8l9.4-6.2a1 1 0 0 0 0-1.6L9.6 5c-.7-.5-1.6 0-1.6.8Z" />
+                  </svg>
+                )}
+              </button>
+              <SkipButton label="Forward 10 seconds" disabled={!canControl} onClick={() => skip(SKIP_MS)} />
+            </div>
+
+            <div className="order-4 ml-auto flex shrink-0 items-center gap-0.5 @xl:order-3 @xl:ml-1">
+              {/* Volume: the button alone on a phone, where the slider is a
+                  worse target than the device's own keys. */}
+              <button
+                type="button"
+                onClick={toggleMuted}
+                aria-label={muted ? "Unmute" : "Mute"}
+                title={muted ? "Unmute (M)" : "Mute (M)"}
+                className="grid h-10 w-10 place-items-center rounded-full text-cream/80 transition hover:bg-white/[0.05] hover:text-cream active:scale-90 @xl:h-9 @xl:w-9"
+              >
+                <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+                  <path d="M11 5 6.5 9H3v6h3.5L11 19z" strokeLinejoin="round" />
+                  {muted ? (
+                    <path d="m16 9.5 4 5m0-5-4 5" strokeLinecap="round" />
+                  ) : (
+                    <>
+                      <path d="M15.5 9.2a4 4 0 0 1 0 5.6" strokeLinecap="round" />
+                      <path d="M18 7a7.5 7.5 0 0 1 0 10" strokeLinecap="round" className={volume > 0.5 ? "" : "opacity-30"} />
+                    </>
+                  )}
+                </svg>
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.02}
+                value={muted ? 0 : volume}
+                onChange={(event) => applyVolume(Number(event.currentTarget.value))}
+                onKeyDown={(event) => event.stopPropagation()}
+                aria-label="Volume"
+                className="hidden w-20 @xl:block"
+                // The global range style leaves the track to the component: a
+                // filled off-white level over a dim rail, 4px tall.
+                style={{
+                  background: `linear-gradient(to right, var(--color-cream) ${(muted ? 0 : volume) * 100}%, var(--color-panel-3) ${(muted ? 0 : volume) * 100}%) center / 100% 4px no-repeat`,
+                }}
+              />
+
+              {/* Only where the player actually has a ladder to choose from. */}
+              {qualities.length > 1 ? (
+                <QualityMenu levels={qualities} current={quality} onPick={applyQuality} />
+              ) : null}
+
+              <button
+                type="button"
+                onClick={toggleFullscreen}
+                aria-label={fullscreen ? "Leave fullscreen" : "Fullscreen"}
+                title={fullscreen ? "Leave fullscreen (F)" : "Fullscreen (F)"}
+                className="grid h-10 w-10 place-items-center rounded-full text-cream/80 transition hover:bg-white/[0.05] hover:text-cream active:scale-90 @xl:h-9 @xl:w-9"
+              >
+                <svg viewBox="0 0 24 24" className="h-[18px] w-[18px]" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+                  {fullscreen ? (
+                    <path d="M9 4v5H4m11-5v5h5M9 20v-5H4m11 5v-5h5" strokeLinecap="round" strokeLinejoin="round" />
+                  ) : (
+                    <path d="M4 9V4h5M20 9V4h-5M4 15v5h5m11-5v5h-5" strokeLinecap="round" strokeLinejoin="round" />
+                  )}
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -477,9 +433,9 @@ function SkipButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className="relative hidden h-9 w-9 shrink-0 place-items-center rounded-full text-cream/80 transition hover:bg-white/[0.06] hover:text-cream active:scale-90 disabled:opacity-30 @xl:grid"
+      className="relative hidden h-9 w-9 shrink-0 place-items-center rounded-full text-cream/80 transition hover:bg-white/[0.05] hover:text-cream active:scale-90 disabled:opacity-30 @xl:grid"
     >
-      <svg viewBox="0 0 24 24" className={`h-7 w-7 ${back ? "" : "-scale-x-100"}`} fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+      <svg viewBox="0 0 24 24" className={`h-7 w-7 ${back ? "" : "-scale-x-100"}`} fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
         <path d="M5 12a7 7 0 1 0 2.1-5" strokeLinecap="round" />
         <path d="M5 4.5V8h3.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
@@ -520,8 +476,8 @@ function QualityMenu({
         aria-label="Video quality"
         aria-expanded={open}
         title="Video quality"
-        className={`h-10 rounded-full px-2.5 font-mono text-[11px] transition hover:bg-white/[0.06] @xl:h-9 ${
-          open ? "bg-white/[0.08] text-cream" : "text-cream/80"
+        className={`h-10 rounded-full px-2.5 font-mono text-[11px] transition hover:bg-white/[0.05] @xl:h-9 ${
+          open ? "bg-white/[0.07] text-cream" : "text-cream/80"
         }`}
       >
         {label}
@@ -537,7 +493,7 @@ function QualityMenu({
                 setOpen(false);
               }}
               className={`flex min-h-10 w-full items-center justify-between rounded-xl px-3 py-2 text-left text-sm transition hover:bg-white/[0.05] ${
-                level.id === current ? "text-cobalt" : "text-cream/90"
+                level.id === current ? "text-gold" : "text-cream/90"
               }`}
             >
               {level.label}

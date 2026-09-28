@@ -75,6 +75,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             case "/auth/register/resend" -> List.of(RateLimits.VERIFY_SEND);
             case "/auth/verify/resend" -> List.of(RateLimits.VERIFY_SEND);
             case "/rooms" -> List.of(RateLimits.ROOM_CREATE);
+            case "/friends/requests" -> List.of(RateLimits.FRIEND_REQUEST);
             case "/ws-ticket" -> List.of(RateLimits.WS_TICKET);
             default -> List.of();
         };

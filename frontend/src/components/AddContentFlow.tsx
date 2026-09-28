@@ -19,7 +19,7 @@ interface Props {
 
 // The same tiles the server sends (CatalogController.sources), so the list
 // keeps its size when the real answer lands just after the sheet has opened.
-const FALLBACK_SOURCES: SourceStatus[] = [
+export const FALLBACK_SOURCES: SourceStatus[] = [
   { id: "youtube", label: "YouTube", browsable: false, playableOnWeb: true },
   { id: "hosted", label: "Video link", browsable: false, playableOnWeb: true, note: "A direct MP4, WebM or HLS URL." },
   { id: "vimeo", label: "Vimeo", browsable: false, playableOnWeb: true, note: "Paste a Vimeo link." },
@@ -35,6 +35,78 @@ const FALLBACK_SOURCES: SourceStatus[] = [
 /** The last answer, so opening the picker again shows it straight away. */
 let knownSources: SourceStatus[] | null = null;
 
+/** The sources the server offers, starting from the last known answer. */
+export function useSources(enabled = true) {
+  const [sources, setSources] = useState<SourceStatus[]>(knownSources ?? FALLBACK_SOURCES);
+  useEffect(() => {
+    if (!enabled) return;
+    api
+      .sources()
+      .then((fresh) => {
+        knownSources = fresh;
+        setSources(fresh);
+      })
+      .catch(() => undefined);
+  }, [enabled]);
+  return sources;
+}
+
+/** A pasted Vimeo or direct video link, read by the server and handed on. */
+export function LinkForm({
+  platform,
+  onPick,
+  autoFocus = true,
+}: {
+  platform: Extract<Platform, "hosted" | "vimeo">;
+  onPick: (item: CatalogItem) => Promise<void> | void;
+  autoFocus?: boolean;
+}) {
+  const [link, setLink] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    if (!link.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const item = await api.resolveLink(link.trim(), platform);
+      await onPick(item);
+    } catch (ex) {
+      setError(ex instanceof HttpError ? ex.message : "That link could not be read.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <Input
+        value={link}
+        onChange={(event) => setLink(event.target.value)}
+        placeholder={platform === "vimeo" ? "https://vimeo.com/..." : "https://example.com/video.mp4"}
+        aria-label={platform === "vimeo" ? "Vimeo link" : "Video link"}
+        type="url"
+        inputMode="url"
+        enterKeyHint="go"
+        autoFocus={autoFocus}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") void submit();
+        }}
+      />
+      <p className="text-xs leading-relaxed text-muted">
+        {platform === "vimeo"
+          ? "Any public Vimeo video."
+          : "A direct link to an MP4, WebM or HLS (.m3u8) file, not a page that contains one."}
+      </p>
+      {error ? <Banner tone="error">{error}</Banner> : null}
+      <Button onClick={() => void submit()} disabled={!link.trim() || busy} className="w-full">
+        {busy ? <Spinner /> : "Start watching"}
+      </Button>
+    </div>
+  );
+}
+
 /**
  * The "+" flow: pick a source, then pick something to watch.
  *
@@ -43,28 +115,14 @@ let knownSources: SourceStatus[] | null = null;
  * box that cannot work.
  */
 export default function AddContentFlow({ open, onClose, onPick, title = "Start a watch party" }: Props) {
-  const [sources, setSources] = useState<SourceStatus[]>(knownSources ?? FALLBACK_SOURCES);
+  const sources = useSources(open);
   const [chosen, setChosen] = useState<Platform | null>(null);
   const [busyRef, setBusyRef] = useState<string | null>(null);
-  const [link, setLink] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [resolving, setResolving] = useState(false);
-
-  useEffect(() => {
-    if (!open) return;
-    api
-      .sources()
-      .then((fresh) => {
-        knownSources = fresh;
-        setSources(fresh);
-      })
-      .catch(() => undefined);
-  }, [open]);
 
   useEffect(() => {
     if (!open) {
       setChosen(null);
-      setLink("");
       setError(null);
       setBusyRef(null);
     }
@@ -79,20 +137,6 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
       setError(ex instanceof HttpError ? ex.message : "That did not work. Try again.");
     } finally {
       setBusyRef(null);
-    }
-  }
-
-  async function useLink(platform: Platform) {
-    if (!link.trim()) return;
-    setResolving(true);
-    setError(null);
-    try {
-      const item = await api.resolveLink(link.trim(), platform);
-      await pick(item);
-    } catch (ex) {
-      setError(ex instanceof HttpError ? ex.message : "That link could not be read.");
-    } finally {
-      setResolving(false);
     }
   }
 
@@ -117,22 +161,12 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
                 type="button"
                 disabled={disabled}
                 onClick={() => setChosen(source.id)}
-                className={`group flex w-full items-center gap-4 rounded-2xl border border-line bg-panel-2/60 px-4 py-3.5 text-left transition ${
-                  disabled ? "opacity-50" : "hover:border-cobalt/35 hover:bg-panel-2 active:scale-[0.99]"
+                className={`group flex w-full items-center gap-4 rounded-2xl border border-line bg-panel-2/50 px-4 py-3.5 text-left transition ${
+                  disabled ? "opacity-50" : "hover:border-line-strong hover:bg-panel-2 active:scale-[0.99]"
                 }`}
               >
-                <span
-                  className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${
-                    source.id === "youtube"
-                      ? "bg-ember/15 text-ember"
-                      : source.id === "vimeo"
-                        ? "bg-[#7cc4e8]/15 text-[#9ed4ef]"
-                        : source.id === "hosted"
-                          ? "bg-sage/15 text-sage"
-                          : "bg-white/[0.06] text-muted"
-                  }`}
-                >
-                  <SourceIcon platform={source.id} />
+                <span className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-panel-3 text-gold">
+                  <SourceIcon platform={source.id} className="h-5 w-5" />
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[15px] font-semibold text-cream">{source.label}</span>
@@ -141,14 +175,14 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
                   ) : null}
                 </span>
                 {!disabled ? (
-                  <svg viewBox="0 0 24 24" className="h-5 w-5 text-faint transition group-hover:translate-x-0.5 group-hover:text-cobalt" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4 text-faint transition group-hover:translate-x-0.5 group-hover:text-cream" fill="none" stroke="currentColor" strokeWidth="1.8">
                     <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 ) : (
                   // The note already says so; on a phone the badge would only
                   // squeeze the label onto two lines.
-                  <span className="hidden shrink-0 rounded-full border border-line px-2 py-0.5 font-mono text-[9.5px] uppercase tracking-widest text-faint sm:block">
-                    Extension
+                  <span className="hidden shrink-0 rounded-full border border-line px-2 py-0.5 text-[9.5px] font-semibold uppercase tracking-[0.14em] text-faint sm:block">
+                    Desktop
                   </span>
                 )}
               </button>
@@ -157,31 +191,11 @@ export default function AddContentFlow({ open, onClose, onPick, title = "Start a
         </div>
       ) : chosen === "youtube" ? (
         <YouTubeBrowser onPick={(item) => void pick(item)} busyRef={busyRef} />
-      ) : (
-        <div key={chosen} className="fade-in space-y-4 p-4 sm:p-6">
-          <Input
-            value={link}
-            onChange={(event) => setLink(event.target.value)}
-            placeholder={chosen === "vimeo" ? "https://vimeo.com/..." : "https://example.com/video.mp4"}
-            type="url"
-            inputMode="url"
-            enterKeyHint="go"
-            autoFocus
-            onKeyDown={(event) => {
-              if (event.key === "Enter") void useLink(chosen);
-            }}
-          />
-          <p className="text-xs leading-relaxed text-muted">
-            {chosen === "vimeo"
-              ? "Any public Vimeo video."
-              : "A direct link to an MP4, WebM or HLS (.m3u8) file, not a page that contains one."}
-          </p>
-          {error ? <Banner tone="error">{error}</Banner> : null}
-          <Button onClick={() => void useLink(chosen)} disabled={!link.trim() || resolving} className="w-full">
-            {resolving || busyRef ? <Spinner /> : "Start watching"}
-          </Button>
+      ) : chosen === "hosted" || chosen === "vimeo" ? (
+        <div key={chosen} className="fade-in p-4 sm:p-6">
+          <LinkForm platform={chosen} onPick={onPick} />
         </div>
-      )}
+      ) : null}
 
       {chosen === "youtube" && error ? (
         <div className="px-4 pb-4 sm:px-6">

@@ -20,6 +20,10 @@ public class AppUser extends AssignedIdEntity {
     private Instant deletedAt;
     /** Null until the address is confirmed; Google accounts arrive confirmed. */
     private Instant emailVerifiedAt;
+    /** Whether friends may see which room this account is in. */
+    private boolean shareActivity = true;
+    /** The code in this account's "add me as a friend" link; null until first asked for. */
+    private String friendCode;
 
     protected AppUser() {}
 
@@ -90,5 +94,21 @@ public class AppUser extends AssignedIdEntity {
 
     public void markEmailVerified() {
         this.emailVerifiedAt = Instant.now();
+    }
+
+    public boolean isShareActivity() {
+        return shareActivity;
+    }
+
+    public void setShareActivity(boolean shareActivity) {
+        this.shareActivity = shareActivity;
+    }
+
+    public String getFriendCode() {
+        return friendCode;
+    }
+
+    public void setFriendCode(String friendCode) {
+        this.friendCode = friendCode;
     }
 }

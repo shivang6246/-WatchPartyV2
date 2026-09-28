@@ -26,8 +26,8 @@ export default function VerifyEmailBanner({ email }: { email: string | null }) {
   }
 
   return (
-    <div className="fade-in flex flex-wrap items-center justify-between gap-x-6 gap-y-3 rounded-2xl border border-cobalt/30 bg-cobalt/[0.07] px-5 py-4">
-      <p className="min-w-0 text-sm leading-relaxed text-cream/90">
+    <div className="fade-in flex flex-wrap items-center justify-between gap-x-6 gap-y-2.5 rounded-2xl border border-gold/25 bg-gold/[0.05] px-4 py-3 sm:gap-y-3 sm:px-5 sm:py-4">
+      <p className="min-w-0 text-[13px] leading-relaxed text-cream/90 sm:text-sm">
         <span className="font-semibold">Confirm your email to host a room.</span>{" "}
         {state === "sent" ? (
           <>A new link is on its way to {email ?? "your inbox"}.</>
@@ -35,7 +35,7 @@ export default function VerifyEmailBanner({ email }: { email: string | null }) {
           <span className="text-[#ffc2b5]">{error}</span>
         ) : (
           <>
-            We sent a link to <span className="text-cobalt-soft">{email ?? "your inbox"}</span>. Joining rooms works
+            We sent a link to <span className="text-gold">{email ?? "your inbox"}</span>. Joining rooms works
             without it.
           </>
         )}

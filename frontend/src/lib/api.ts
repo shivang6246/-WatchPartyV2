@@ -3,6 +3,9 @@ import type {
   CatalogItem,
   CatalogPage,
   ChatPage,
+  FriendActivity,
+  FriendRelation,
+  FriendsOverview,
   GuestResponse,
   PendingRegistration,
   QueueItem,
@@ -22,6 +25,7 @@ export const API_BASE =
  */
 let accessToken: string | null = null;
 let refreshInFlight: Promise<string | null> | null = null;
+let restoring: Promise<string | null> | null = null;
 
 export function setAccessToken(token: string | null) {
   accessToken = token;
@@ -83,6 +87,13 @@ interface RequestOptions extends RequestInit {
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { token, noRetry, noAuth, headers, ...rest } = options;
+  // A call made while the page is still restoring the session would go out
+  // with no token, be refused (a 401 in the console) and only then retried.
+  // Wait for the restore instead: it is started once and settles once, so
+  // after the first page load this costs nothing.
+  if (!noAuth && !token && !accessToken) {
+    await restoreSession();
+  }
   // An expired access token would be rejected by the auth filter before the
   // handler ever runs, so the refresh call must send none at all.
   const bearer = noAuth ? null : (token ?? accessToken);
@@ -123,17 +134,36 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   return (await response.json()) as T;
 }
 
-/** Concurrent 401s share one rotation: refresh tokens are single-use. */
-export function refreshAccessToken(): Promise<string | null> {
+/**
+ * The session restore from the refresh cookie as the page loads: started by
+ * whichever comes first, the auth provider or an early API call (a child's
+ * effect runs before its provider's), and shared by both. Later refreshes go
+ * through refreshAccessToken.
+ */
+export function restoreSession(): Promise<string | null> {
+  if (!restoring) restoring = refreshAccessToken(true);
+  return restoring;
+}
+
+/**
+ * Concurrent 401s share one rotation: refresh tokens are single-use.
+ *
+ * @param optional asks "is there a session?" rather than "refresh this one":
+ *     with no refresh cookie at all the server answers 204, not a 401 that a
+ *     signed-out visitor would see in the console on every page.
+ */
+export function refreshAccessToken(optional = false): Promise<string | null> {
   if (!refreshInFlight) {
-    refreshInFlight = apiFetch<AuthResponse>("/api/v1/auth/refresh", {
+    refreshInFlight = apiFetch<AuthResponse | undefined>(`/api/v1/auth/refresh${optional ? "?optional=true" : ""}`, {
       method: "POST",
       noRetry: true,
       noAuth: true,
     })
       .then((auth) => {
-        setAccessToken(auth.accessToken);
-        return auth.accessToken;
+        // undefined: the 204, no session to restore.
+        const token = auth?.accessToken ?? null;
+        setAccessToken(token);
+        return token;
       })
       .catch(() => {
         setAccessToken(null);
@@ -205,6 +235,26 @@ export const api = {
 
   myRooms: () => apiFetch<RoomCard[]>("/api/v1/rooms"),
 
+  // ---- Friends (accounts only) ----
+  friends: () => apiFetch<FriendsOverview>("/api/v1/friends"),
+  friendActivity: () => apiFetch<FriendActivity>("/api/v1/friends/activity"),
+  /** By email, by someone in your room (roomId + memberId), or by a friend link's code. */
+  addFriend: (body: { email?: string; roomId?: string; memberId?: string; code?: string }) =>
+    apiFetch<FriendsOverview>("/api/v1/friends/requests", { method: "POST", body: JSON.stringify(body) }),
+  acceptFriend: (requestId: string) =>
+    apiFetch<FriendsOverview>(`/api/v1/friends/requests/${encodeURIComponent(requestId)}/accept`, { method: "POST" }),
+  /** Declines a request you received, or cancels one you sent. */
+  dismissFriendRequest: (requestId: string) =>
+    apiFetch<FriendsOverview>(`/api/v1/friends/requests/${encodeURIComponent(requestId)}`, { method: "DELETE" }),
+  unfriend: (userId: string) =>
+    apiFetch<FriendsOverview>(`/api/v1/friends/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+  setShareActivity: (shareActivity: boolean) =>
+    apiFetch<FriendsOverview>("/api/v1/friends/settings", { method: "PATCH", body: JSON.stringify({ shareActivity }) }),
+  friendLink: () => apiFetch<{ code: string }>("/api/v1/friends/link"),
+  rotateFriendLink: () => apiFetch<{ code: string }>("/api/v1/friends/link/rotate", { method: "POST" }),
+  friendsInRoom: (roomId: string) =>
+    apiFetch<{ members: Record<string, FriendRelation> }>(`/api/v1/friends/rooms/${encodeURIComponent(roomId)}`),
+
   createRoom: (body: {
     title?: string;
     platform: string;
@@ -228,6 +278,9 @@ export const api = {
     ),
 
   youtubeTrending: () => apiFetch<CatalogPage>("/api/v1/catalog/youtube/trending"),
+
+  /** New film trailers. Public: the home backdrop plays one to signed-out visitors too. */
+  youtubeTrailers: () => apiFetch<CatalogPage>("/api/v1/catalog/youtube/trailers"),
 
   /** Resolves a pasted link to a title and thumbnail; needs no API key. */
   resolveLink: (url: string, platform?: string) =>

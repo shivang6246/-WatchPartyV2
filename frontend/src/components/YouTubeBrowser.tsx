@@ -9,6 +9,8 @@ import type { CatalogItem } from "@/lib/types";
 interface Props {
   onPick: (item: CatalogItem) => void;
   busyRef?: string | null;
+  /** Laid out on a page (Discover) rather than inside the picker sheet. */
+  page?: boolean;
 }
 
 /**
@@ -19,7 +21,7 @@ interface Props {
  * rendered here, and only the player itself is embedded once a video is
  * chosen. Without an API key the same screen still works by pasting a link.
  */
-export default function YouTubeBrowser({ onPick, busyRef }: Props) {
+export default function YouTubeBrowser({ onPick, busyRef, page = false }: Props) {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [nextPageToken, setNextPageToken] = useState<string | null>(null);
@@ -31,6 +33,11 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const requestId = useRef(0);
+  // The first page last asked for, so the same search is not fetched twice
+  // (opening the browser used to load trending, then load it again 400 ms
+  // later when the empty search box's debounce fired). Cleared on failure,
+  // so asking again retries.
+  const loadedTerm = useRef<string | null>(null);
 
   // One box does both: a link is used as it is, anything else is a search.
   const pastedLink = /^(https?:\/\/|www\.|youtu\.be\/|(m\.)?youtube\.com\/)/i.test(query.trim()) ? query.trim() : null;
@@ -42,19 +49,25 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
   }, []);
 
   const load = useCallback(async (term: string, pageToken?: string | null) => {
+    const wanted = term.trim();
+    if (!pageToken) {
+      if (loadedTerm.current === wanted) return;
+      loadedTerm.current = wanted;
+    }
     const id = ++requestId.current;
     setLoading(true);
-    setError(null);
     try {
-      const page = term.trim()
-        ? await api.youtubeSearch(term.trim(), pageToken)
-        : await api.youtubeTrending();
+      const page = wanted ? await api.youtubeSearch(wanted, pageToken) : await api.youtubeTrending();
       if (id !== requestId.current) return;
+      // Cleared on success only: clearing it up front made a failing retry
+      // hide and re-show the banner, and everything under it jumped twice.
+      setError(null);
       setSearchDisabled(page.notice === "search_unavailable");
       setItems((current) => (pageToken ? [...current, ...page.items] : page.items));
       setNextPageToken(page.nextPageToken ?? null);
     } catch (ex) {
       if (id !== requestId.current) return;
+      if (!pageToken) loadedTerm.current = null;
       setError(ex instanceof HttpError ? ex.message : "Could not reach YouTube.");
     } finally {
       if (id === requestId.current) setLoading(false);
@@ -88,7 +101,13 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="sticky top-0 z-10 space-y-3 border-b border-line bg-panel px-4 py-3 sm:px-6 sm:py-4 land:py-2">
+      <div
+        className={
+          page
+            ? "sticky top-0 z-10 -mx-5 space-y-3 bg-ink/95 px-5 py-3 sm:mx-0 sm:px-0"
+            : "sticky top-0 z-10 space-y-3 border-b border-line bg-panel px-4 py-3 sm:px-6 sm:py-4 land:py-2"
+        }
+      >
         <form
           className="relative"
           onSubmit={(event) => {
@@ -116,7 +135,7 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
             aria-label={searchDisabled ? "YouTube link" : "Search YouTube or paste a link"}
             type="search"
             enterKeyHint={pastedLink ? "go" : "search"}
-            className="pl-11"
+            className="rounded-full pl-11"
           />
         </form>
 
@@ -132,9 +151,9 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
         {error ? <Banner tone="error">{error}</Banner> : null}
       </div>
 
-      <div className="flex-1 px-4 py-4 sm:px-6 sm:py-5">
+      <div className={page ? "flex-1 py-4" : "flex-1 px-4 py-4 sm:px-6 sm:py-5"}>
         {loading && items.length === 0 ? (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 ${page ? "lg:grid-cols-3 xl:grid-cols-4" : ""}`}>
             {Array.from({ length: 6 }).map((_, index) => (
               <div key={index} className="flex animate-pulse gap-3 sm:block land:flex">
                 <div className="aspect-video w-[42%] max-w-44 shrink-0 rounded-xl bg-panel-2 sm:w-full sm:max-w-none sm:rounded-2xl land:w-[42%] land:max-w-44 land:rounded-xl" />
@@ -150,7 +169,7 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
             {searchDisabled || pastedLink ? "Paste a link above to start." : "Nothing found. Try another search."}
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className={`grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 ${page ? "lg:grid-cols-3 xl:grid-cols-4" : ""}`}>
             {items.map((item) => (
               <button
                 key={item.ref}
@@ -159,7 +178,7 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
                 disabled={busyRef === item.ref}
                 className="group flex gap-3 text-left transition active:scale-[0.99] disabled:opacity-60 sm:block land:flex"
               >
-                <div className="relative aspect-video w-[42%] max-w-44 shrink-0 overflow-hidden rounded-xl border border-line bg-panel-2 transition group-hover:border-cobalt/40 sm:w-full sm:max-w-none sm:rounded-2xl land:w-[42%] land:max-w-44 land:rounded-xl">
+                <div className="relative aspect-video w-[42%] max-w-44 shrink-0 overflow-hidden rounded-xl border border-line bg-panel-2 transition group-hover:border-line-strong sm:w-full sm:max-w-none sm:rounded-2xl land:w-[42%] land:max-w-44 land:rounded-xl">
                   {item.thumbnail ? (
                     <div className="h-full w-full transition duration-500 group-hover:scale-[1.05]">
                       <Poster src={item.thumbnail} />
@@ -175,13 +194,13 @@ export default function YouTubeBrowser({ onPick, busyRef }: Props) {
                     </span>
                   ) : null}
                   {busyRef === item.ref ? (
-                    <span className="absolute inset-0 grid place-items-center bg-ink/70 text-cobalt">
+                    <span className="absolute inset-0 grid place-items-center bg-ink/70 text-gold">
                       <Spinner />
                     </span>
                   ) : null}
                 </div>
                 <div className="min-w-0 flex-1 py-0.5 sm:mt-2.5 sm:py-0 land:mt-0 land:py-0.5">
-                  <p className="line-clamp-2 text-sm font-medium leading-snug text-cream transition group-hover:text-cobalt-soft">
+                  <p className="line-clamp-2 text-sm font-medium leading-snug text-cream transition group-hover:text-cream">
                     {item.title}
                   </p>
                   <p className="mt-1 truncate text-xs text-muted">{item.author}</p>

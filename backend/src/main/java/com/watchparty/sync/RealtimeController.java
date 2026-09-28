@@ -36,13 +36,16 @@ public class RealtimeController {
         this.chatService = chatService;
     }
 
+    /**
+     * The one path where a round trip is felt on every press, so the room row
+     * is loaded only if the room turns out to be cold (see PlaybackService).
+     */
     @MessageMapping("/room/{roomId}/playback")
     public void playback(
             @DestinationVariable UUID roomId, @Payload PlaybackMessage message, Principal principal) {
         AuthPrincipal caller = principal(principal);
-        Room room = roomService.requireRoomById(roomId);
         RoomMember member = roomService.requireMember(roomId, caller);
-        playbackService.handle(room, member, message, caller.getName());
+        playbackService.handle(roomId, () -> roomService.requireRoomById(roomId), member, message, caller.getName());
     }
 
     @MessageMapping("/room/{roomId}/chat")

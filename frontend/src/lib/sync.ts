@@ -85,6 +85,12 @@ export class SyncEngine {
   private leadMs: number | null = null;
   /** A playing seek was issued and its landing has not been measured yet. */
   private awaitingLanding = false;
+  /**
+   * Until then the player is left exactly where the viewer put it: the host
+   * just played, paused or seeked with the player's own controls and the
+   * room's answer is still on its way. Correcting now would undo their click.
+   */
+  private localHoldUntil = 0;
 
   constructor(
     private readonly clock: ServerClock,
@@ -117,6 +123,36 @@ export class SyncEngine {
     return this.state;
   }
 
+  /**
+   * Leaves the player alone for a moment: the viewer acted on it directly and
+   * the room has been asked to follow. The room's answer ends the hold early;
+   * if it never comes, the hold runs out and the room's state wins again.
+   */
+  holdLocal(ms: number) {
+    this.clearNudge();
+    this.localHoldUntil = Date.now() + ms;
+  }
+
+  /**
+   * This viewer's own play, pause or seek, done to the player now rather than
+   * when the room's echo arrives, then held like holdLocal until it does. The
+   * room anchors the change at the moment it was made, so the echo finds the
+   * player already in place and has nothing to correct.
+   */
+  applyLocal(change: { playing: boolean; positionMs?: number }, holdMs: number) {
+    this.holdLocal(holdMs);
+    const player = this.player;
+    if (!player || !player.isReady()) return;
+    // Pause before seeking, as in hardApply: YouTube's seekTo resumes a player.
+    if (!change.playing) player.pause();
+    if (change.positionMs !== undefined) {
+      player.seek(change.positionMs);
+      // Past the hold, the load time is not drift to chase.
+      this.settleUntil = Date.now() + 1200;
+    }
+    if (change.playing) player.play();
+  }
+
   private get ladder(): Ladder {
     return this.player?.fineRateSupported ? LADDERS.fine : LADDERS.coarse;
   }
@@ -141,6 +177,7 @@ export class SyncEngine {
       durationMs: message.durationMs ?? this.state?.durationMs ?? null,
       sequence,
     };
+    this.localHoldUntil = 0;
     this.hardApply();
   }
 
@@ -201,6 +238,12 @@ export class SyncEngine {
     const actual = player.getPositionMs();
     const drift = actual - expected;
     this.lastDrift = drift;
+
+    if (Date.now() < this.localHoldUntil) {
+      this.stalledTicks = 0;
+      this.report("none");
+      return;
+    }
 
     // A playing room must actually be playing. The player can stop on its own:
     // a click on the video, an autoplay block, a tab that was backgrounded.

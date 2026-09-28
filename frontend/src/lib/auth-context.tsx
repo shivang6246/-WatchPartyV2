@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { api, refreshAccessToken, setAccessToken } from "./api";
+import { api, restoreSession, setAccessToken } from "./api";
 import type { AuthResponse, UserView } from "./types";
 
 /** Either signed in already, or waiting on the code emailed to `email`. */
@@ -36,7 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    refreshAccessToken()
+    // Shared with any API call that was made before this effect ran.
+    restoreSession()
       .then(async (token) => {
         if (!token || cancelled) return;
         const me = await api.me().catch(() => null);
@@ -88,6 +89,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(null);
     setUser(null);
   }, []);
+
+  // The hint the layout's first-paint script reads (see AUTH_HINT in
+  // layout.tsx): only a display name, never a credential. Written once the
+  // session is known, so the next page load draws the right greeting at once.
+  useEffect(() => {
+    if (loading) return;
+    const root = document.documentElement;
+    try {
+      if (user) localStorage.setItem("wp.name", user.displayName);
+      else localStorage.removeItem("wp.name");
+    } catch {
+      // Private mode: every load simply starts from the signed-out layout.
+    }
+    root.dataset.auth = user ? "in" : "out";
+    if (user) root.style.setProperty("--wp-name", JSON.stringify(user.displayName));
+    else root.style.removeProperty("--wp-name");
+  }, [user, loading]);
 
   const value = useMemo(
     () => ({ user, loading, signIn, register, confirmRegistration, signOut, refreshUser }),

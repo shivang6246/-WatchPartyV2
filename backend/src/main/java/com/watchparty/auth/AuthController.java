@@ -103,9 +103,21 @@ public class AuthController {
         return respond(authService.login(request));
     }
 
+    /**
+     * @param optional the web app's page-load check: with no refresh cookie at
+     *     all there is no session to restore, and that is an answer (204), not a
+     *     failure every signed-out visitor would see in the console. A cookie
+     *     that is expired, revoked or reused is still a 401, and so is any call
+     *     without the flag, so other clients see no change.
+     */
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponse> refresh(HttpServletRequest request) {
-        return respond(authService.refresh(readRefreshCookie(request)));
+    public ResponseEntity<AuthResponse> refresh(
+            HttpServletRequest request, @RequestParam(defaultValue = "false") boolean optional) {
+        String cookie = readRefreshCookie(request);
+        if (optional && (cookie == null || cookie.isBlank())) {
+            return ResponseEntity.noContent().build();
+        }
+        return respond(authService.refresh(cookie));
     }
 
     @PostMapping("/logout")

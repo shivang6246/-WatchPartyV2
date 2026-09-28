@@ -61,8 +61,22 @@ public class RoomStateService {
 
     static final String EMPTY_KEY = "wp:watch:room-empty";
 
+    /** Rooms whose presence set is not known to be empty; see {@link #roomsWithPresence}. */
+    static final String LIVE_ROOMS_KEY = "wp:presence:rooms";
+
+    /** Claims the aged-out members of one presence set: returns them and removes them in one step. */
+    private static final String EXPIRE_SCRIPT = """
+            local stale = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1])
+            if #stale > 0 then
+              redis.call('ZREM', KEYS[1], unpack(stale))
+            end
+            return stale
+            """;
+
     private final StringRedisTemplate redis;
     private final RedisScript<Long> applyScript;
+    @SuppressWarnings("rawtypes")
+    private final RedisScript<List> expireScript;
     private final Duration stateTtl;
     private final Duration heartbeatTtl;
     private final WatchPartyMetrics metrics;
@@ -70,6 +84,7 @@ public class RoomStateService {
     public RoomStateService(StringRedisTemplate redis, AppProperties props, WatchPartyMetrics metrics) {
         this.redis = redis;
         this.applyScript = new DefaultRedisScript<>(APPLY_SCRIPT, Long.class);
+        this.expireScript = new DefaultRedisScript<>(EXPIRE_SCRIPT, List.class);
         this.stateTtl = props.room().ttl();
         this.heartbeatTtl = props.room().memberHeartbeatTtl();
         this.metrics = metrics;
@@ -126,13 +141,13 @@ public class RoomStateService {
     }
 
     /**
-     * Applies an accepted event: stamps it with the server clock, assigns the
-     * next sequence and stores the result.
+     * Applies an accepted event: anchors it at {@code anchor} (server clock, see
+     * {@link RoomState#anchorFor}), assigns the next sequence and stores the
+     * result.
      *
      * @return the new authoritative state, or null if the room is not loaded
      */
-    public RoomState apply(UUID roomId, long positionMs, boolean playing, float speed, Long durationMs) {
-        long anchor = System.currentTimeMillis();
+    public RoomState apply(UUID roomId, long positionMs, boolean playing, float speed, Long durationMs, long anchor) {
         Long seq = metrics.timeApply(() -> redis.execute(
                 applyScript,
                 List.of(stateKey(roomId)),
@@ -259,7 +274,38 @@ public class RoomStateService {
         Double previous = redis.opsForZSet().score(key, memberId.toString());
         redis.opsForZSet().add(key, memberId.toString(), now);
         redis.expire(key, stateTtl);
+        // So the presence sweep knows to look at this room.
+        redis.opsForSet().add(LIVE_ROOMS_KEY, roomId.toString());
         return previous == null || previous < now - heartbeatTtl.toMillis();
+    }
+
+    /** When this member's last heartbeat landed, or null when they are not present right now. */
+    public Long lastHeartbeat(UUID roomId, UUID memberId) {
+        Double score = redis.opsForZSet().score(membersKey(roomId), memberId.toString());
+        if (score == null || score < System.currentTimeMillis() - heartbeatTtl.toMillis()) {
+            return null;
+        }
+        return score.longValue();
+    }
+
+    /** Rooms with anyone in their presence set: what the presence sweep walks. */
+    public Set<UUID> roomsWithPresence() {
+        Set<String> ids = redis.opsForSet().members(LIVE_ROOMS_KEY);
+        if (ids == null) {
+            return Set.of();
+        }
+        return ids.stream().map(UUID::fromString).collect(Collectors.toSet());
+    }
+
+    /**
+     * Stops sweeping a room once nobody is left in it. A heartbeat racing this
+     * only drops the room from the sweep until that member's next heartbeat.
+     */
+    public void forgetIfEmpty(UUID roomId) {
+        Long count = redis.opsForZSet().zCard(membersKey(roomId));
+        if (count == null || count == 0) {
+            redis.opsForSet().remove(LIVE_ROOMS_KEY, roomId.toString());
+        }
     }
 
     /**
@@ -299,20 +345,21 @@ public class RoomStateService {
 
     /**
      * Drops members whose heartbeats stopped without a disconnect (a laptop
-     * lid, a dead network).
+     * lid, a dead network). Read and removal are one script, so when several
+     * instances sweep the same room, each departure is claimed, and announced,
+     * exactly once.
      *
      * @return the members dropped, so the room can be told they left
      */
     public Set<UUID> expirePresence(UUID roomId) {
-        String key = membersKey(roomId);
         long cutoff = System.currentTimeMillis() - heartbeatTtl.toMillis();
-        Set<String> stale = redis.opsForZSet().rangeByScore(key, 0, cutoff);
+        List<?> stale = redis.execute(expireScript, List.of(membersKey(roomId)), String.valueOf(cutoff));
         if (stale == null || stale.isEmpty()) {
             return Set.of();
         }
-        redis.opsForZSet().removeRangeByScore(key, 0, cutoff);
-        redis.opsForHash().delete(healthKey(roomId), stale.toArray());
-        return stale.stream().map(UUID::fromString).collect(Collectors.toSet());
+        List<String> ids = stale.stream().map(String::valueOf).toList();
+        redis.opsForHash().delete(healthKey(roomId), ids.toArray());
+        return ids.stream().map(UUID::fromString).collect(Collectors.toSet());
     }
 
     private static long asLong(Object value, long fallback) {

@@ -22,7 +22,7 @@ export default function AuthCallbackPage() {
       <div className="flex flex-col items-center gap-5 text-sm text-muted">
         <Logo />
         <span className="flex items-center gap-2.5">
-          <Spinner className="h-4 w-4 text-cobalt" /> Finishing sign-in…
+          <Spinner className="h-4 w-4 text-gold" /> Finishing sign-in…
         </span>
       </div>
     </main>

@@ -132,7 +132,8 @@ public class RoomService {
                 room.getVideoThumbnail(),
                 room.isLocked(),
                 room.isActive(),
-                (int) members.countByRoomIdAndLeftAtIsNullAndRemovedFalse(room.getId()));
+                // Who is actually connected right now, not everyone who once joined.
+                stateService.presentMembers(room.getId()).size());
     }
 
     public Optional<RoomMember> findMember(UUID roomId, AuthPrincipal principal) {
@@ -158,19 +159,25 @@ public class RoomService {
         return member;
     }
 
-    /** The home screen's list: rooms this account hosts or has joined. */
+    /**
+     * The home screen's list: rooms this account hosts or has joined. Two
+     * queries whatever the number of rooms (the client polls it), and the
+     * counts come from live presence in Redis.
+     */
     public List<RoomCard> roomsFor(AuthPrincipal principal) {
         if (principal == null || principal.isGuest()) {
             return List.of();
         }
-        List<RoomCard> cards = new ArrayList<>();
-        Set<UUID> seen = new HashSet<>();
-
+        Map<UUID, Boolean> hostOf = new HashMap<>();
         for (RoomMember membership : members.findByUserIdAndRemovedFalse(principal.id())) {
-            rooms.findById(membership.getRoomId())
-                    .filter(Room::isActive)
-                    .filter(room -> seen.add(room.getId()))
-                    .ifPresent(room -> cards.add(card(room, membership.isHost())));
+            hostOf.merge(membership.getRoomId(), membership.isHost(), Boolean::logicalOr);
+        }
+        if (hostOf.isEmpty()) {
+            return List.of();
+        }
+        List<RoomCard> cards = new ArrayList<>();
+        for (Room room : rooms.findByIdInAndActiveTrue(hostOf.keySet())) {
+            cards.add(card(room, hostOf.get(room.getId())));
         }
         cards.sort(Comparator.comparing(RoomCard::updatedAt).reversed());
         return cards;
@@ -185,7 +192,7 @@ public class RoomService {
                 room.getVideoTitle(),
                 room.getVideoThumbnail(),
                 host,
-                (int) members.countByRoomIdAndLeftAtIsNullAndRemovedFalse(room.getId()),
+                stateService.presentMembers(room.getId()).size(),
                 room.getUpdatedAt());
     }
 

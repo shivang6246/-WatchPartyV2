@@ -11,6 +11,7 @@ import java.time.Instant;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -39,6 +40,13 @@ public class PlaybackService {
     /** Beyond this the client is treated as behind rather than drifting. */
     private static final long BEHIND_THRESHOLD_MS = 2000;
 
+    /**
+     * How far back a member's "I pressed at" may anchor an event. It covers the
+     * YouTube player's 350 ms burst settle plus the trip here, with room for a
+     * slow network; anything claiming more is anchored this far back.
+     */
+    static final long MAX_BACKDATE_MS = 1500;
+
     private final RoomStateService stateService;
     private final RoomEventPublisher events;
     private final PlaybackEventRepository eventLog;
@@ -65,9 +73,17 @@ public class PlaybackService {
      * state back on their error queue, which their ordinary drift correction
      * already knows how to apply, so a client that tries to control a locked
      * room simply snaps back instead of diverging.
+     *
+     * <p>Everything between the frame and the broadcast is Redis, apart from the
+     * caller's membership check: the room row is read only when the room is
+     * cold, and the history row is written after everyone has been told. Every
+     * database round trip here is time the room waits after the host presses.
+     *
+     * @param room loads the room row; called only when Redis has no live state
      */
-    public void handle(Room room, RoomMember member, PlaybackMessage inbound, String principalName) {
-        RoomState current = stateService.load(room);
+    public void handle(UUID roomId, Supplier<Room> room, RoomMember member, PlaybackMessage inbound, String principalName) {
+        RoomState live = stateService.read(roomId);
+        RoomState current = live != null ? live : stateService.hydrate(room.get());
 
         String action = inbound.action() == null ? "" : inbound.action().toLowerCase();
         if (!ACTIONS.contains(action)) {
@@ -104,11 +120,14 @@ public class PlaybackService {
             duration = inbound.durationMs();
         }
 
+        // When the member pressed, which is where their own player already is.
+        long at = current.anchorFor(inbound.serverTs(), System.currentTimeMillis(), MAX_BACKDATE_MS);
+
         long requested = switch (action) {
             case "seek" -> clamp(inbound.positionMs() == null ? 0 : inbound.positionMs(), duration);
-            // play and pause take effect where playback actually is now, not
-            // where the pressing client happens to have buffered to.
-            default -> clamp(current.projectedPositionMs(System.currentTimeMillis()), duration);
+            // play and pause take effect where the room's playback was at that
+            // moment, not where the pressing client happens to have buffered to.
+            default -> clamp(current.projectedPositionMs(at), duration);
         };
 
         boolean playing = switch (action) {
@@ -120,24 +139,29 @@ public class PlaybackService {
 
         float speed = "rate".equals(action) ? clampSpeed(inbound.speedOrDefault()) : current.speed();
 
-        RoomState updated = stateService.apply(room.getId(), requested, playing, speed, duration);
+        RoomState updated = stateService.apply(roomId, requested, playing, speed, duration, at);
         if (updated == null) {
-            updated = stateService.hydrate(room);
+            updated = stateService.hydrate(room.get());
         }
 
-        eventLog.save(new PlaybackEventEntity(
-                room.getId(),
-                member.getId(),
-                action,
-                updated.positionMs(),
-                updated.playing(),
-                updated.speed(),
-                updated.sequence(),
-                Instant.ofEpochMilli(updated.anchorTs())));
-
-        events.publish(
-                room.getId(), "playback", PlaybackMessage.from(updated, action, member.getId().toString()));
+        events.publish(roomId, "playback", PlaybackMessage.from(updated, action, member.getId().toString()));
         metrics.playbackEvent(action, "accepted");
+
+        // History only: nothing on the way to the room reads it, and a failure
+        // here must not turn an event everyone has already applied into an error.
+        try {
+            eventLog.save(new PlaybackEventEntity(
+                    roomId,
+                    member.getId(),
+                    action,
+                    updated.positionMs(),
+                    updated.playing(),
+                    updated.speed(),
+                    updated.sequence(),
+                    Instant.ofEpochMilli(updated.anchorTs())));
+        } catch (RuntimeException ex) {
+            log.warn("Playback event {} for room {} was applied but not logged", updated.sequence(), roomId, ex);
+        }
     }
 
     /** Sends the current state to one member, e.g. after a reconnect. */

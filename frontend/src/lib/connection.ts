@@ -189,8 +189,9 @@ export class RoomConnection {
     }
   }
 
-  sendPlayback(message: PlaybackMessage) {
-    this.publish(`/app/room/${this.roomId}/playback`, message);
+  /** False when the socket is down and nothing was sent. */
+  sendPlayback(message: PlaybackMessage): boolean {
+    return this.publish(`/app/room/${this.roomId}/playback`, message);
   }
 
   sendChat(body: string) {
@@ -209,9 +210,10 @@ export class RoomConnection {
     this.publish(`/app/room/${this.roomId}/resync`, {});
   }
 
-  private publish(destination: string, body: unknown) {
-    if (!this.client?.connected) return;
+  private publish(destination: string, body: unknown): boolean {
+    if (!this.client?.connected) return false;
     this.client.publish({ destination, body: JSON.stringify(body) });
+    return true;
   }
 
   disconnect() {

@@ -76,12 +76,11 @@ const MessageList = memo(function MessageList({
         if (item.kind === "presence") {
           const { event } = item;
           return (
-            <li key={event.id} className="flex justify-center py-1.5">
-              <span className="flex items-center gap-1.5 rounded-full bg-white/[0.04] px-3 py-1 text-[11.5px] text-muted">
-                <span className={`h-1.5 w-1.5 rounded-full ${event.kind === "joined" ? "bg-sage" : "bg-faint"}`} aria-hidden />
-                <span className="font-medium text-cream/85">{event.name}</span>
+            <li key={event.id} className="flex justify-center py-2">
+              <span className="flex items-center gap-1.5 text-[11.5px] text-faint">
+                <span className="font-medium text-muted">{event.name}</span>
                 {event.kind === "joined" ? "joined" : "left"}
-                <span className="font-mono text-[10px] text-faint">{TIME.format(item.at)}</span>
+                <span className="font-mono text-[10px]">· {TIME.format(item.at)}</span>
               </span>
             </li>
           );
@@ -101,14 +100,16 @@ const MessageList = memo(function MessageList({
             <div className={`flex min-w-0 max-w-[80%] flex-col ${mine ? "items-end" : "items-start"}`}>
               {!continues ? (
                 <div className={`mb-1 flex items-baseline gap-2 ${mine ? "flex-row-reverse" : ""}`}>
-                  <span className="text-xs font-semibold text-cream/90">{mine ? "You" : message.displayName}</span>
+                  <span className="text-xs font-medium text-muted">{mine ? "You" : message.displayName}</span>
                   <span className="font-mono text-[10px] text-faint">{TIME.format(at)}</span>
                 </div>
               ) : null}
               {/* Rendered as text, never as markup. */}
               <p
-                className={`whitespace-pre-wrap break-words px-3.5 py-2 text-sm leading-snug ${
-                  mine ? "rounded-2xl rounded-tr-md bg-cobalt text-white" : "rounded-2xl rounded-tl-md bg-panel-2 text-cream/95"
+                className={`whitespace-pre-wrap break-words px-3.5 py-2 text-[14.5px] leading-snug sm:text-sm ${
+                  mine
+                    ? "rounded-2xl rounded-tr-md border border-gold/20 bg-own text-cream"
+                    : "rounded-2xl rounded-tl-md bg-panel-2 text-cream/95"
                 }`}
               >
                 {message.body}
@@ -180,7 +181,7 @@ export default function ChatPanel({
         {messages.length === 0 && presence.length === 0 ? (
           <div className="grid h-full place-items-center py-8 text-center">
             <div>
-              <p className="font-serif text-2xl italic text-cream/80">The lights are down.</p>
+              <p className="font-serif text-2xl italic text-cream/85">The lights are down.</p>
               <p className="mt-1 text-sm text-faint">Say hello before the opening scene.</p>
             </div>
           </div>
@@ -193,9 +194,9 @@ export default function ChatPanel({
         {typing.length > 0 ? (
           <>
             <span className="flex gap-0.5" aria-hidden>
-              <span className="h-1 w-1 animate-bounce rounded-full bg-cobalt [animation-delay:-0.3s]" />
-              <span className="h-1 w-1 animate-bounce rounded-full bg-cobalt [animation-delay:-0.15s]" />
-              <span className="h-1 w-1 animate-bounce rounded-full bg-cobalt" />
+              <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:-0.3s]" />
+              <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:-0.15s]" />
+              <span className="h-1 w-1 animate-bounce rounded-full bg-muted" />
             </span>
             {typingLine(typing)}
           </>
@@ -219,7 +220,10 @@ export default function ChatPanel({
         </div>
       ) : null}
 
-      <form className="flex shrink-0 items-center gap-1.5 border-t border-line p-2 sm:gap-2 sm:p-3" onSubmit={submit}>
+      <form
+        className="mx-2.5 mb-2.5 flex shrink-0 items-center gap-1 rounded-full border border-line-strong bg-panel p-1 transition focus-within:border-gold/40 sm:mx-3 sm:mb-3"
+        onSubmit={submit}
+      >
         {onReact ? (
           <button
             type="button"
@@ -227,10 +231,10 @@ export default function ChatPanel({
             aria-label={reacting ? "Hide reactions" : "Show reactions"}
             aria-expanded={reacting}
             className={`grid h-11 w-11 shrink-0 place-items-center rounded-full transition active:scale-95 lg:hidden ${
-              reacting ? "bg-cobalt/15 text-cobalt-soft" : "text-muted hover:text-cream"
+              reacting ? "bg-gold/10 text-gold" : "text-muted hover:text-cream"
             }`}
           >
-            <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+            <svg viewBox="0 0 24 24" className="h-[22px] w-[22px]" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
               <circle cx="12" cy="12" r="8.5" />
               <path d="M8.5 14a4 4 0 0 0 7 0" strokeLinecap="round" />
               <circle cx="9.2" cy="10" r="1" fill="currentColor" stroke="none" />
@@ -251,16 +255,18 @@ export default function ChatPanel({
           aria-label="Message"
           enterKeyHint="send"
           // 16px on a phone, or iOS zooms the page when the box is tapped.
-          className="h-11 min-w-0 flex-1 rounded-full border border-line bg-ink px-4 text-base text-cream placeholder:text-faint transition focus:border-cobalt/60 focus:outline-none focus:ring-4 focus:ring-cobalt/15 disabled:opacity-50 sm:text-sm"
+          className={`h-11 min-w-0 flex-1 bg-transparent text-base text-cream placeholder:text-faint focus:outline-none disabled:opacity-50 sm:text-sm ${
+            onReact ? "pl-1 lg:pl-4" : "pl-4"
+          }`}
         />
         <button
           type="submit"
           disabled={muted || !draft.trim()}
           aria-label="Send"
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cobalt text-white transition hover:bg-cobalt-bright active:scale-95 disabled:bg-panel-3 disabled:text-faint"
+          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cream text-ink transition hover:bg-white active:scale-95 disabled:bg-panel-3 disabled:text-faint"
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
-            <path d="m3.4 20.4 17.5-7.5a1 1 0 0 0 0-1.8L3.4 3.6a1 1 0 0 0-1.4 1l1.6 5.6L14 12l-10.4 1.8-1.6 5.6a1 1 0 0 0 1.4 1Z" />
+          <svg viewBox="0 0 24 24" className="h-[17px] w-[17px]" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="M12 19V5M6 11l6-6 6 6" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </button>
       </form>

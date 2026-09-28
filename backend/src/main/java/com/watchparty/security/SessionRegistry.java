@@ -61,6 +61,23 @@ public class SessionRegistry {
     }
 
     /**
+     * Whether this member still has another open session on this instance: a
+     * second tab, say. Their leaving one tab is then not them leaving the room.
+     */
+    public boolean hasOtherSession(UUID memberId, String exceptSessionId) {
+        for (Map.Entry<String, UUID> entry : memberBySession.entrySet()) {
+            if (!entry.getValue().equals(memberId) || entry.getKey().equals(exceptSessionId)) {
+                continue;
+            }
+            WebSocketSession session = sessions.get(entry.getKey());
+            if (session != null && session.isOpen()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * Closes every local session held by one member after {@code delay}, which
      * gives the explanatory error frame already queued for them time to leave.
      *

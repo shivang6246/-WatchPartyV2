@@ -2,6 +2,7 @@ package com.watchparty.room;
 
 import jakarta.persistence.LockModeType;
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -23,6 +24,9 @@ public interface RoomRepository extends JpaRepository<Room, UUID> {
     List<Room> findByActiveFalseAndClosedAtBefore(Instant cutoff);
 
     List<Room> findByActiveTrue();
+
+    /** The open rooms among these, in one query: the home screen's list. */
+    List<Room> findByIdInAndActiveTrue(Collection<UUID> ids);
 
     /** The rooms a signed-in user is hosting, newest first, for the home screen. */
     List<Room> findByHostUserIdAndActiveTrueOrderByUpdatedAtDesc(UUID hostUserId);

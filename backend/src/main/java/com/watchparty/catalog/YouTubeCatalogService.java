@@ -10,8 +10,13 @@ import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import org.slf4j.Logger;
@@ -39,6 +44,20 @@ public class YouTubeCatalogService {
     private static final Logger log = LoggerFactory.getLogger(YouTubeCatalogService.class);
     private static final String API = "https://www.googleapis.com/youtube/v3";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+    private static final String DEFAULT_REGION = "US";
+    /** Every region YouTube could chart. Anything else falls back to the default, never into a cache key. */
+    private static final Set<String> REGIONS = Set.of(Locale.getISOCountries());
+    private static final Pattern TRAILER = Pattern.compile("\\b(trailer|teaser)\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SHORTS = Pattern.compile("#shorts?\\b", Pattern.CASE_INSENSITIVE);
+    /** Shorter than this is a clip or a Short, not a trailer. */
+    private static final long MIN_TRAILER_MS = 45_000;
+    /** How far back "new trailers" reach. */
+    private static final Duration TRAILER_WINDOW = Duration.ofDays(30);
+    /**
+     * The trailer feed is one search (100 units) plus one lookup (1 unit), so
+     * it is kept for hours, not minutes: about 400 units a day, whoever asks.
+     */
+    private static final Duration TRAILERS_TTL = Duration.ofHours(6);
 
     private final AppProperties props;
     private final StringRedisTemplate redis;
@@ -86,7 +105,7 @@ public class YouTubeCatalogService {
         if (!searchAvailable()) {
             return new CatalogPage(List.of(), null, "search_unavailable");
         }
-        String region = (regionCode == null || regionCode.isBlank()) ? "US" : regionCode.toUpperCase();
+        String region = normalizeRegion(regionCode);
         String cacheKey = "catalog:yt:trending:" + region;
         CatalogPage cached = readCache(cacheKey);
         if (cached != null) {
@@ -98,6 +117,67 @@ public class YouTubeCatalogService {
         CatalogPage page = new CatalogPage(toItems(response), null, null);
         writeCache(cacheKey, page);
         return page;
+    }
+
+    /**
+     * New film trailers for the home screen's backdrop: the most-viewed
+     * embeddable "official trailer" videos of the last thirty days, with
+     * Shorts, clips and live streams left out. (The popular chart of the Film &
+     * Animation category would cost 1 unit instead of 100, but it is Shorts
+     * and memes, not trailers.)
+     *
+     * <p>Public, unlike the rest of the catalogue, so a signed-out visitor's
+     * home screen has it too. That is affordable only because it is a single
+     * cache key held for hours: no caller can make it search more often.
+     */
+    public CatalogPage trailers() {
+        if (!searchAvailable()) {
+            return new CatalogPage(List.of(), null, "search_unavailable");
+        }
+        String cacheKey = "catalog:yt:trailers";
+        CatalogPage cached = readCache(cacheKey);
+        if (cached != null) {
+            return cached;
+        }
+
+        String since = Instant.now().minus(TRAILER_WINDOW).truncatedTo(ChronoUnit.SECONDS).toString();
+        JsonNode response = call("/search?part=snippet&type=video&maxResults=50&order=viewCount&safeSearch=moderate"
+                + "&videoEmbeddable=true&videoDuration=short&q=" + encode("official trailer")
+                + "&publishedAfter=" + encode(since));
+        List<String> ids = StreamSupport.stream(response.path("items").spliterator(), false)
+                .map(item -> item.path("id").path("videoId").asText(null))
+                .filter(id -> id != null && !id.isBlank())
+                .collect(Collectors.toList());
+
+        CatalogPage page = new CatalogPage(pickTrailers(details(ids)), null, null);
+        writeCache(cacheKey, page, TRAILERS_TTL);
+        return page;
+    }
+
+    /** A two-letter region YouTube knows, upper-cased, or the default for anything else. */
+    public static String normalizeRegion(String regionCode) {
+        if (regionCode == null) {
+            return DEFAULT_REGION;
+        }
+        String region = regionCode.trim().toUpperCase(Locale.ROOT);
+        return REGIONS.contains(region) ? region : DEFAULT_REGION;
+    }
+
+    /**
+     * What a backdrop can loop: long enough to be a trailer rather than a
+     * clip, not a Short, not live (a stream never ends). Of those, the ones
+     * titled as trailers or teasers when there are a few; otherwise all.
+     */
+    public static List<CatalogItem> pickTrailers(List<CatalogItem> items) {
+        List<CatalogItem> watchable = items.stream()
+                .filter(item -> !item.live())
+                .filter(item -> item.durationMs() != null && item.durationMs() >= MIN_TRAILER_MS)
+                .filter(item -> !SHORTS.matcher(item.title()).find())
+                .toList();
+        List<CatalogItem> trailers = watchable.stream()
+                .filter(item -> TRAILER.matcher(item.title()).find())
+                .toList();
+        return trailers.size() >= 3 ? trailers : watchable;
     }
 
     /** Hydrates ids with the duration and channel the search endpoint omits. */
@@ -182,8 +262,12 @@ public class YouTubeCatalogService {
     }
 
     private void writeCache(String key, CatalogPage page) {
+        writeCache(key, page, CACHE_TTL);
+    }
+
+    private void writeCache(String key, CatalogPage page, Duration ttl) {
         try {
-            redis.opsForValue().set(key, objectMapper.writeValueAsString(page), CACHE_TTL);
+            redis.opsForValue().set(key, objectMapper.writeValueAsString(page), ttl);
         } catch (Exception ex) {
             log.debug("Could not cache catalogue page {}", key);
         }

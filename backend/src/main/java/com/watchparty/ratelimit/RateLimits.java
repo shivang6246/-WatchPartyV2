@@ -25,6 +25,8 @@ public final class RateLimits {
     // A room code is enough to join, so looking one up is what a guesser does.
     public static final Policy ROOM_LOOKUP = new Policy("room-lookup", 20, Duration.ofMinutes(1), Key.IP);
     public static final Policy ROOM_CREATE = new Policy("room-create", 5, Duration.ofHours(1), Key.PRINCIPAL);
+    /** Adding by email says whether an address has an account, so it is not free to repeat. */
+    public static final Policy FRIEND_REQUEST = new Policy("friend-request", 30, Duration.ofHours(1), Key.PRINCIPAL);
     public static final Policy WS_TICKET = new Policy("ws-ticket", 10, Duration.ofMinutes(1), Key.PRINCIPAL);
     public static final Policy WS_CONNECT = new Policy("ws-connect", 5, Duration.ofMinutes(1), Key.IP);
     // Search spends someone else's quota, so it is limited per caller as well

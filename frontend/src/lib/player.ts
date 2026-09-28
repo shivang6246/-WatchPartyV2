@@ -9,6 +9,18 @@ export interface QualityLevel {
   label: string;
 }
 
+/**
+ * Something the viewer did with a player's own controls (YouTube's bar), as
+ * opposed to the sync engine moving the player. The position is where the
+ * player is now, which is what the room should follow.
+ */
+export interface ViewerAction {
+  type: "play" | "pause" | "seek";
+  positionMs: number;
+  /** When it happened (Date.now()), which is where the room anchors it. */
+  at: number;
+}
+
 export interface PlayerHandle {
   play(): void;
   pause(): void;

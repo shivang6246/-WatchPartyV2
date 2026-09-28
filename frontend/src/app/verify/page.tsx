@@ -87,7 +87,7 @@ function Verify() {
         eyebrow="Email confirmed"
         title={
           <>
-            You can <span className="font-serif font-normal italic text-cobalt-soft">host</span> now.
+            You can <span className="font-serif font-normal italic">host</span> now.
           </>
         }
         subtitle="Your address is confirmed. Start a party whenever you like."
@@ -106,7 +106,7 @@ function Verify() {
   if (token && state === "working") {
     return (
       <AuthShell eyebrow="One moment" title="Checking your link…">
-        <Spinner className="text-cobalt" />
+        <Spinner className="text-gold" />
       </AuthShell>
     );
   }
@@ -117,7 +117,7 @@ function Verify() {
         eyebrow="Email"
         title={
           <>
-            That link is <span className="font-serif font-normal italic text-cobalt-soft">spent.</span>
+            That link is <span className="font-serif font-normal italic">spent.</span>
           </>
         }
         subtitle="Links work once and expire after a day. The code from the same email works too."
@@ -141,7 +141,7 @@ function Verify() {
   if (loading && !pendingEmail) {
     return (
       <AuthShell eyebrow="One moment" title="Loading…">
-        <Spinner className="text-cobalt" />
+        <Spinner className="text-gold" />
       </AuthShell>
     );
   }
@@ -155,7 +155,7 @@ function Verify() {
         eyebrow="Confirm your email"
         title={
           <>
-            Sign in <span className="font-serif font-normal italic text-cobalt-soft">first.</span>
+            Sign in <span className="font-serif font-normal italic">first.</span>
           </>
         }
         subtitle="Codes belong to one account, so we need to know who you are. Opening the link from the email works without signing in."
@@ -172,7 +172,7 @@ function Verify() {
       eyebrow="Confirm your email"
       title={
         <>
-          Check your <span className="font-serif font-normal italic text-cobalt-soft">inbox.</span>
+          Check your <span className="font-serif font-normal italic">inbox.</span>
         </>
       }
       subtitle={
@@ -186,14 +186,14 @@ function Verify() {
         pendingEmail ? (
           <>
             Wrong address?{" "}
-            <Link className="font-medium text-cobalt-soft underline-offset-4 hover:underline" href="/register">
+            <Link className="font-medium text-gold underline-offset-4 hover:underline" href="/register">
               Sign up again
             </Link>
           </>
         ) : (
           <>
             Joining a room never needs this.{" "}
-            <Link className="font-medium text-cobalt-soft underline-offset-4 hover:underline" href="/">
+            <Link className="font-medium text-gold underline-offset-4 hover:underline" href="/">
               Skip for now
             </Link>
           </>
@@ -212,7 +212,7 @@ function Verify() {
           autoComplete="one-time-code"
           placeholder="000000"
           autoFocus
-          className="h-16 w-full rounded-2xl border border-line bg-ink/60 text-center font-mono text-3xl tracking-[0.5em] text-cream placeholder:text-faint/40 focus:border-cobalt/50 focus:outline-none focus:ring-4 focus:ring-cobalt/10"
+          className="h-16 w-full rounded-2xl border border-line-strong bg-panel text-center font-mono text-3xl tracking-[0.5em] text-cream placeholder:text-faint/40 focus:border-gold/50 focus:outline-none focus:ring-4 focus:ring-gold/10"
         />
         {error ? <Banner tone="error">{error}</Banner> : null}
         {resent && !error ? <Banner tone="success">A new code is on its way.</Banner> : null}

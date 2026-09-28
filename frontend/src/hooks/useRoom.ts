@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpError, api, clearGuestToken, getAccessToken, readGuestToken, writeGuestToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { RoomConnection } from "@/lib/connection";
-import type { PlayerHandle } from "@/lib/player";
+import type { PlayerHandle, ViewerAction } from "@/lib/player";
 import { SyncEngine, type SyncDiagnostics } from "@/lib/sync";
 import type {
   CatalogItem,
@@ -33,6 +33,16 @@ export interface PresenceEvent {
   name: string;
   /** Epoch millis, on this client's clock. */
   at: number;
+}
+
+/**
+ * You are in the room you are looking at. The server can briefly say
+ * otherwise (you closed another tab of this room, on another server), and the
+ * People list must never drop you for it.
+ */
+function withSelfPresent(members: MemberView[], selfId: string | null | undefined): MemberView[] {
+  if (!selfId) return members;
+  return members.map((member) => (member.id === selfId && !member.present ? { ...member, present: true } : member));
 }
 
 /** A leave followed by a join within this long is a reload, not news. */
@@ -67,6 +77,14 @@ export interface RoomSession {
   buffering: boolean;
   /** The attached player, for the per-viewer controls: volume, quality, fullscreen. */
   player: () => PlayerHandle | null;
+  /**
+   * The viewer used the player's own controls (YouTube's bar). The host's
+   * action goes to the whole room; anyone else's is undone by the sync engine
+   * and explained with a hint.
+   */
+  viewerAction: (action: ViewerAction) => void;
+  /** A short-lived line for the stage, e.g. why a guest's pause did not stick. */
+  hint: string | null;
   play: () => void;
   pause: () => void;
   seek: (positionMs: number) => void;
@@ -98,6 +116,12 @@ const TYPING_IDLE_MS = 4000;
 /** Drop someone else's indicator if no refresh arrives in this long. */
 const TYPING_EXPIRY_MS = 6000;
 const REACTION_LIFETIME_MS = 2800;
+/**
+ * After the host acts on the player directly, the engine leaves the player
+ * alone this long for the room's answer, so it does not undo the click first.
+ */
+const VIEWER_HOLD_MS = 2500;
+const HINT_MS = 3500;
 
 /**
  * Everything a room page needs: joining, the socket, the sync engine, chat and
@@ -125,6 +149,8 @@ export function useRoom(code: string, invite: string | null): RoomSession {
   const [reactions, setReactions] = useState<LiveReaction[]>([]);
   const [typingMap, setTypingMap] = useState<Map<string, { name: string; until: number }>>(new Map());
   const [presence, setPresence] = useState<PresenceEvent[]>([]);
+  const [hint, setHint] = useState<string | null>(null);
+  const hintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Who was watching at the last roster, to tell arrivals and departures apart.
   // Null until this client's own first roster, which announces nobody.
   const watchingRef = useRef<Map<string, string> | null>(null);
@@ -176,7 +202,7 @@ export function useRoom(code: string, invite: string | null): RoomSession {
       try {
         const joined = await api.joinRoom(code, { inviteToken: invite }, candidate);
         setRoom(joined);
-        setMembers(joined.members);
+        setMembers(withSelfPresent(joined.members, joined.selfMemberId));
         setPlaying(joined.playback.playing ?? false);
         playingRef.current = joined.playback.playing ?? false;
         setDurationMs(joined.playback.durationMs ?? null);
@@ -229,7 +255,7 @@ export function useRoom(code: string, invite: string | null): RoomSession {
     try {
       const fresh = await api.getRoom(code, tokenRef.current);
       setRoom(fresh);
-      setMembers(fresh.members);
+      setMembers(withSelfPresent(fresh.members, fresh.selfMemberId));
     } catch {
       // The next roster or room event will bring the view up to date anyway.
     }
@@ -265,7 +291,7 @@ export function useRoom(code: string, invite: string | null): RoomSession {
       onChat: (message) => setMessages((current) => [...current, message]),
       onMembers: (event) => {
         if (event.type === "roster") {
-          setMembers(event.members);
+          setMembers(withSelfPresent(event.members, roomRef.current?.selfMemberId));
         } else if (event.type === "health") {
           setBehindMembers((current) => {
             const next = new Set(current);
@@ -274,6 +300,8 @@ export function useRoom(code: string, invite: string | null): RoomSession {
             return next;
           });
         } else if (event.type === "left") {
+          // About yourself it is only ever another tab of yours closing.
+          if (event.memberId === roomRef.current?.selfMemberId) return;
           setMembers((current) =>
             current.map((m) => (m.id === event.memberId ? { ...m, present: false } : m)),
           );
@@ -477,18 +505,88 @@ export function useRoom(code: string, invite: string | null): RoomSession {
     setBufferingState((current) => (current === next ? current : next));
   }, []);
 
-  const sendIntent = useCallback((action: "play" | "pause" | "seek", positionMs?: number) => {
-    const connection = connectionRef.current;
-    if (!connection) return;
-    connection.sendPlayback({
-      action,
-      positionMs: Math.round(positionMs ?? engineRef.current?.projectedPositionMs() ?? 0),
-      // A seek keeps the room as it is: scrubbing a paused video must not
-      // start it, and scrubbing a playing one must not stop it.
-      playing: action === "seek" ? playingRef.current : action === "play",
-      durationMs: playerRef.current?.getDurationMs() ?? undefined,
-    });
+  /** @returns false when the socket is down and nothing was sent */
+  const sendIntent = useCallback(
+    (action: "play" | "pause" | "seek", positionMs?: number, actedAt = Date.now()): boolean => {
+      const connection = connectionRef.current;
+      if (!connection) return false;
+      return connection.sendPlayback({
+        action,
+        positionMs: Math.round(positionMs ?? engineRef.current?.projectedPositionMs() ?? 0),
+        // A seek keeps the room as it is: scrubbing a paused video must not
+        // start it, and scrubbing a playing one must not stop it.
+        playing: action === "seek" ? playingRef.current : action === "play",
+        durationMs: playerRef.current?.getDurationMs() ?? undefined,
+        // When the viewer acted, on the server's clock. The room anchors the
+        // change there (within bounds) instead of at the frame's arrival, so a
+        // player that already moved agrees with the echo. Until the clock is
+        // synced, the arrival time is the better guess.
+        serverTs: connection.clock.synced ? Math.round(actedAt + connection.clock.offset) : undefined,
+      });
+    },
+    [],
+  );
+
+  /**
+   * Play, pause or seek from this page: the transport and the keyboard. When
+   * this member may control the room, the player moves at once and the room
+   * follows, anchored at the press. Waiting for the echo instead made every
+   * press cost a full trip through the server before anything happened.
+   */
+  const intent = useCallback(
+    (action: "play" | "pause" | "seek", positionMs?: number) => {
+      if (!sendIntent(action, positionMs)) return;
+      const current = roomRef.current;
+      if (!current || (current.locked && current.selfRole !== "host")) return;
+      const playingNow = action === "seek" ? playingRef.current : action === "play";
+      engineRef.current?.applyLocal(
+        { playing: playingNow, positionMs: action === "seek" ? positionMs : undefined },
+        VIEWER_HOLD_MS,
+      );
+      playingRef.current = playingNow;
+      setPlaying(playingNow);
+    },
+    [sendIntent],
+  );
+
+  const showHint = useCallback((text: string) => {
+    if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    setHint(text);
+    hintTimerRef.current = setTimeout(() => setHint(null), HINT_MS);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (hintTimerRef.current) clearTimeout(hintTimerRef.current);
+    },
+    [],
+  );
+
+  const viewerAction = useCallback(
+    (action: ViewerAction) => {
+      const current = roomRef.current;
+      if (!current) return;
+      // Already where the room is (play pressed on a room that plays, say, to
+      // get past an autoplay block): that is joining in, not a change.
+      if (action.type === "play" && playingRef.current) return;
+      if (action.type === "pause" && !playingRef.current) return;
+      const mayControl = !current.locked || current.selfRole === "host";
+      if (!mayControl) {
+        // The engine puts the player back on its next tick; say why.
+        showHint("Only the host can play, pause or seek.");
+        return;
+      }
+      engineRef.current?.holdLocal(VIEWER_HOLD_MS);
+      if (!sendIntent(action.type, Math.max(0, action.positionMs), action.at)) return;
+      // The room is doing what the host just did, before the echo says so: a
+      // seek right behind this play must not carry the old playing flag.
+      if (action.type !== "seek") {
+        playingRef.current = action.type === "play";
+        setPlaying(playingRef.current);
+      }
+    },
+    [sendIntent, showHint],
+  );
 
   const setTyping = useCallback((typing: boolean) => {
     const connection = connectionRef.current;
@@ -607,13 +705,15 @@ export function useRoom(code: string, invite: string | null): RoomSession {
     setBuffering,
     buffering,
     player: () => playerRef.current,
-    play: () => sendIntent("play"),
-    pause: () => sendIntent("pause"),
-    seek: (positionMs: number) => sendIntent("seek", Math.max(0, positionMs)),
+    viewerAction,
+    hint,
+    play: () => intent("play"),
+    pause: () => intent("pause"),
+    seek: (positionMs: number) => intent("seek", Math.max(0, positionMs)),
     skipBy: (deltaMs: number) => {
       const from = engineRef.current?.projectedPositionMs() ?? 0;
       const target = Math.max(0, from + deltaMs);
-      sendIntent("seek", durationMs ? Math.min(target, durationMs) : target);
+      intent("seek", durationMs ? Math.min(target, durationMs) : target);
     },
     resume: () => engineRef.current?.userStart(),
     sendChat: (body: string) => {
@@ -626,7 +726,7 @@ export function useRoom(code: string, invite: string | null): RoomSession {
     patchRoom: async (body: Record<string, unknown>) => {
       const updated = await api.patchRoom(code, body, tokenRef.current);
       setRoom(updated);
-      setMembers(updated.members);
+      setMembers(withSelfPresent(updated.members, updated.selfMemberId));
     },
     closeRoom: async () => {
       await api.closeRoom(code, tokenRef.current);

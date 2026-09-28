@@ -30,7 +30,7 @@ export default function JoinGate({ preview, onJoin }: Props) {
       </header>
 
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col pb-10 pt-2 sm:justify-center sm:pt-0 land:max-w-2xl land:pb-3">
-        <div className="animate-rise overflow-hidden rounded-3xl border land:flex border-line-strong bg-panel shadow-[0_30px_90px_-30px_rgb(0_0_0/0.9),0_0_60px_-30px_rgb(59_91_255/0.6)]">
+        <div className="animate-rise overflow-hidden rounded-[24px] border land:flex border-line bg-panel shadow-[0_30px_90px_-30px_rgb(0_0_0/0.95)]">
           {preview?.videoThumbnail ? (
             <div className="relative aspect-video w-full overflow-hidden bg-panel-2 land:aspect-auto land:w-[42%] land:shrink-0">
               <Poster src={preview.videoThumbnail} />
@@ -44,7 +44,7 @@ export default function JoinGate({ preview, onJoin }: Props) {
 
           <div className="p-5 sm:p-7 land:min-w-0 land:flex-1 land:p-5">
             <Eyebrow>{preview?.code ? `Room ${preview.code}` : "You're invited"}</Eyebrow>
-            <h1 className="mt-2 text-2xl font-semibold leading-tight tracking-[-0.02em] sm:text-3xl land:text-2xl">
+            <h1 className="mt-2 font-serif text-[1.9rem] font-normal leading-tight tracking-[-0.01em] sm:text-4xl land:text-2xl">
               {preview?.title ?? "Join the room"}
             </h1>
             {preview?.videoTitle && preview.videoTitle !== preview.title ? (

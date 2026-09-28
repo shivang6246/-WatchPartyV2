@@ -19,14 +19,14 @@ export function Button({
     lg: "h-12 px-6 text-[15px]",
   } as const;
   const variants = {
-    // Cobalt on black: the one loud thing on any screen.
-    primary: "bg-cobalt text-white shadow-[0_8px_28px_-10px_rgb(59_91_255/0.9)] hover:bg-cobalt-bright",
-    // The halo's white, for the quieter of two calls to action.
+    // Off-white on near-black: the one clear call to action on any screen.
+    primary: "bg-cream text-ink hover:bg-white",
+    // Kept for callers that pair it with primary; the two now read the same.
     light: "bg-cream text-ink hover:bg-white",
-    secondary: "border border-line-strong bg-panel-2 text-cream hover:border-cobalt/50 hover:bg-panel-3",
-    ghost: "text-cream hover:bg-white/[0.06]",
+    secondary: "border border-line-strong bg-panel-2 text-cream hover:border-white/20 hover:bg-panel-3",
+    ghost: "text-cream hover:bg-white/[0.05]",
     subtle: "text-muted hover:text-cream",
-    danger: "border border-ember/30 bg-ember/10 text-ember hover:bg-ember/20",
+    danger: "border border-ember/30 bg-ember/10 text-ember hover:bg-ember/15",
   } as const;
   return <button className={`${base} ${sizes[size]} ${variants[variant]} ${className}`} {...props} />;
 }
@@ -42,8 +42,8 @@ export function IconButton({
       type="button"
       className={`grid h-10 w-10 shrink-0 place-items-center rounded-full border transition active:scale-95 disabled:opacity-40 ${
         active
-          ? "border-cobalt/50 bg-cobalt/15 text-cobalt-soft"
-          : "border-line bg-panel/80 text-cream hover:border-line-strong hover:bg-panel-2"
+          ? "border-gold/50 bg-gold/10 text-gold"
+          : "border-line bg-transparent text-cream hover:border-line-strong hover:bg-white/[0.04]"
       } ${className}`}
       {...props}
     />
@@ -54,7 +54,7 @@ export function Input({ className = "", ...props }: ComponentProps<"input">) {
   return (
     <input
       // 16px on a phone: anything smaller and iOS zooms the page on focus.
-      className={`h-12 w-full rounded-xl border border-line bg-panel px-4 text-base text-cream placeholder:text-faint transition focus:border-cobalt/60 focus:outline-none focus:ring-4 focus:ring-cobalt/15 sm:text-sm ${className}`}
+      className={`h-12 w-full rounded-xl border border-line-strong bg-panel px-4 text-base text-cream placeholder:text-faint transition focus:border-gold/50 focus:outline-none focus:ring-4 focus:ring-gold/10 sm:text-sm ${className}`}
       {...props}
     />
   );
@@ -106,7 +106,7 @@ export function Field({ label, hint, children }: { label: string; hint?: string;
 /** A small uppercase label, the "Now showing" of the interface. */
 export function Eyebrow({ children, className = "" }: { children: ReactNode; className?: string }) {
   return (
-    <p className={`text-[11px] font-semibold uppercase tracking-[0.16em] text-cobalt-soft ${className}`}>
+    <p className={`text-[10.5px] font-semibold uppercase tracking-[0.18em] text-gold ${className}`}>
       {children}
     </p>
   );
@@ -120,9 +120,9 @@ export function Banner({
   children: ReactNode;
 }) {
   const tones = {
-    info: { box: "border-line-strong bg-panel-2/80 text-cream/90", dot: "bg-cobalt" },
-    error: { box: "border-ember/30 bg-ember/10 text-[#ffc2b5]", dot: "bg-ember" },
-    success: { box: "border-sage/30 bg-sage/10 text-[#c9f0dc]", dot: "bg-sage" },
+    info: { box: "border-line-strong bg-panel-2/80 text-cream/90", dot: "bg-gold" },
+    error: { box: "border-ember/30 bg-ember/10 text-[#f2c4bf]", dot: "bg-ember" },
+    success: { box: "border-sage/30 bg-sage/10 text-[#d3e6d8]", dot: "bg-sage" },
   } as const;
   return (
     <div className={`fade-in flex items-start gap-3 rounded-2xl border px-4 py-3 text-sm leading-relaxed ${tones[tone].box}`}>
@@ -141,35 +141,33 @@ export function Spinner({ className = "" }: { className?: string }) {
   );
 }
 
-/** A green pulse for "live" and "watching". */
+/** A champagne pulse for "live" and "watching". */
 export function LiveDot({ className = "" }: { className?: string }) {
-  return <span className={`inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-sage ${className}`} aria-hidden />;
+  return <span className={`inline-block h-1.5 w-1.5 animate-pulse-dot rounded-full bg-gold ${className}`} aria-hidden />;
 }
 
-/** The mark: a small halo with a play cue inside, and the wordmark. */
+/** The mark: a hairline ring with a play cue inside, and the serif wordmark. */
 export function Logo({ compact = false }: { compact?: boolean }) {
   return (
     <span className="inline-flex items-center gap-2.5">
-      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border-[2.5px] border-white shadow-[0_0_14px_rgb(59_91_255/0.75),inset_0_0_6px_rgb(59_91_255/0.5)]">
-        <svg viewBox="0 0 24 24" className="ml-px h-3 w-3 text-cobalt-soft" fill="currentColor" aria-hidden>
+      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-gold/60 text-gold">
+        <svg viewBox="0 0 24 24" className="ml-px h-3 w-3" fill="currentColor" aria-hidden>
           <path d="M7 4.8v14.4c0 .8.9 1.3 1.6.8l10.6-7.2a1 1 0 0 0 0-1.6L8.6 4c-.7-.5-1.6 0-1.6.8Z" />
         </svg>
       </span>
       {!compact ? (
-        <span className="text-[17px] font-semibold leading-none tracking-[-0.02em]">
-          Watch<span className="font-serif text-[19px] font-normal italic text-cobalt-soft">party</span>
-        </span>
+        <span className="font-serif text-[21px] font-normal leading-none tracking-[-0.01em]">WatchParty</span>
       ) : null}
     </span>
   );
 }
 
-/** A word or two of a headline set in the italic serif, in the accent colour. */
+/** A word or two of a headline set in the italic serif. */
 export function Accent({ children }: { children: ReactNode }) {
-  return <span className="font-serif font-normal italic tracking-normal text-cobalt-soft">{children}</span>;
+  return <span className="font-serif font-normal italic tracking-normal">{children}</span>;
 }
 
-/** Initials stand in for an avatar, coloured deterministically from the name in cool tones. */
+/** Initials stand in for an avatar, on a muted tone picked deterministically from the name. */
 export function Avatar({
   name,
   src,
@@ -184,9 +182,10 @@ export function Avatar({
   className?: string;
 }) {
   const seed = [...name].reduce((total, character) => total + character.charCodeAt(0), 0);
-  // A palette that sits in the room's cobalt light rather than fighting it.
-  const hues = [168, 190, 205, 222, 238, 255, 272, 318];
-  const hue = hues[seed % hues.length];
+  // Warm and cool greys: people are told apart by name, the colour only
+  // keeps a crowd of initials from reading as one grey block.
+  const tones = ["#3a3834", "#34383b", "#3b3632", "#33373a", "#383531", "#31363a", "#3d3a36", "#2f3437"];
+  const tone = tones[seed % tones.length];
   const initials = name
     .split(" ")
     .slice(0, 2)
@@ -196,14 +195,14 @@ export function Avatar({
 
   return (
     <span
-      className={`inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold text-ink ${
-        ring ? "ring-2 ring-cobalt-bright ring-offset-2 ring-offset-ink" : ""
+      className={`inline-flex shrink-0 select-none items-center justify-center overflow-hidden rounded-full font-semibold text-cream ${
+        ring ? "ring-1 ring-gold/70 ring-offset-2 ring-offset-ink" : ""
       } ${className}`}
       style={{
         width: size,
         height: size,
         fontSize: Math.max(10, Math.round(size * 0.36)),
-        background: src ? undefined : `linear-gradient(145deg, hsl(${hue} 85% 80%), hsl(${(hue + 30) % 360} 70% 60%))`,
+        background: src ? undefined : tone,
       }}
       title={name}
     >

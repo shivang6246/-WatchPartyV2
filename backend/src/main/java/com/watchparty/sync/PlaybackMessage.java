@@ -6,8 +6,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
  * One shape, both directions.
  *
  * <p>Inbound the client sets {@code action}, {@code positionMs} and
- * {@code playing} and leaves the rest empty; outbound the server has filled
- * every field. Because a rejection is just the authoritative state arriving
+ * {@code playing}, and may set {@code serverTs} to when the member acted by
+ * its estimate of the server clock, which the server uses, within bounds, as
+ * the event's anchor ({@link RoomState#anchorFor}); the rest stays empty.
+ * Outbound the server has filled every field, {@code serverTs} being the
+ * anchor. Because a rejection is just the authoritative state arriving
  * with a sequence the client has not seen, accepted and rejected events go
  * through exactly the same client code path.
  */

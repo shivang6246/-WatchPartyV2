@@ -65,6 +65,12 @@ public class CatalogController {
         return youtube.trending(region);
     }
 
+    /** New film trailers for the home screen's backdrop. Public; see YouTubeCatalogService.trailers. */
+    @GetMapping("/youtube/trailers")
+    public CatalogPage trailers() {
+        return youtube.trailers();
+    }
+
     /** Resolves a pasted link to a title and thumbnail, with no API key needed. */
     @GetMapping("/resolve")
     public CatalogItem resolve(

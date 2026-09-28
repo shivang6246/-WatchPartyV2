@@ -7,40 +7,43 @@
 @custom-variant land (@media (orientation: landscape) and (max-height: 560px) and (max-width: 1023.98px));
 
 /*
- * Clean and dark: near-black surfaces, off-white type, one electric-cobalt
- * accent. The halo, a ring of white light, is the one piece of ornament.
+ * Quiet and premium: a warm near-black, off-white type, and one restrained
+ * champagne accent used sparingly (live dots, the sync ring, a label). Depth
+ * comes from hairline borders and soft shadows, never from coloured glows.
  * Utilities come from these tokens: bg-ink, bg-panel, text-cream, text-muted,
- * border-line, bg-cobalt, ...
+ * border-line, text-gold, ...
  */
 @theme {
-  --color-ink: #050507;
-  --color-stage: #08080b;
-  --color-panel: #0d0d11;
-  --color-panel-2: #15151b;
-  --color-panel-3: #1e1e26;
-  --color-line: rgb(255 255 255 / 0.08);
-  --color-line-strong: rgb(255 255 255 / 0.15);
-  --color-cream: #f3f3ef;
-  --color-muted: #9a9aa4;
-  --color-faint: #62626d;
-  --color-cobalt: #3b5bff;
-  --color-cobalt-bright: #5a77ff;
-  --color-cobalt-soft: #aabaff;
-  --color-cobalt-deep: #1b2fb8;
-  --color-ember: #ff5c61;
-  --color-sage: #6fe0b0;
+  --color-ink: #0b0b0c;
+  --color-stage: #0e0e10;
+  --color-panel: #121214;
+  --color-panel-2: #1b1b1d;
+  --color-panel-3: #232326;
+  --color-line: rgb(255 255 255 / 0.07);
+  --color-line-strong: rgb(255 255 255 / 0.12);
+  --color-cream: #edeae4;
+  --color-muted: #a29f98;
+  --color-faint: #7f7c75;
+  --color-gold: #c9ae80;
+  --color-gold-bright: #dcc49a;
+  --color-gold-soft: #d8c4a0;
+  --color-gold-deep: #8c7753;
+  /* Your own chat messages: a warm dark, edged in the accent. */
+  --color-own: #26231e;
+  --color-ember: #e0726b;
+  --color-sage: #8fb59b;
 
-  --radius-screen: 1rem;
+  --radius-screen: 1.25rem;
 
   --animate-rise: rise 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
-  --animate-pulse-dot: pulse-dot 2s ease-in-out infinite;
+  --animate-pulse-dot: pulse-dot 2.4s ease-in-out infinite;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, "SFMono-Regular", Menlo, monospace;
-  /* Italic only: the serif is an accent for a word or two, never body text. */
-  --font-serif: var(--font-instrument), "Iowan Old Style", Georgia, serif;
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: var(--font-jetbrains), ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* Display type: page titles, the greeting, the wordmark. Roman and italic. */
+  --font-serif: var(--font-newsreader), "Iowan Old Style", Georgia, serif;
 }
 
 html {
@@ -60,70 +63,42 @@ body {
 }
 
 ::selection {
-  background: rgb(59 91 255 / 0.45);
+  background: rgb(201 174 128 / 0.35);
   color: #fff;
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-cobalt-bright);
+  outline: 1.5px solid var(--color-gold);
   outline-offset: 2px;
 }
 
-/* One cool light from above, fixed so content scrolls through it. Static:
+/* A faint warm light from above, fixed so content scrolls through it. Static:
    a single layer the browser paints once. */
 .spotlight::before {
   content: "";
   position: fixed;
   z-index: -1;
   inset: 0 0 auto;
-  height: 70vh;
+  height: 60vh;
   pointer-events: none;
-  background: radial-gradient(60% 55% at 50% 0%, rgb(59 91 255 / 0.16), transparent 70%);
+  background: radial-gradient(70% 55% at 50% -8%, rgb(255 244 224 / 0.07), transparent 65%);
 }
 
 /*
- * The halo: a ring of white light with a cobalt bloom. Absolutely positioned;
- * size it with a width and it stays round. Two shadows, no animation, so it
- * costs one paint. A slow glint runs around it only on a desktop with motion on.
+ * The rings: concentric hairlines, the one piece of ornament. Absolutely
+ * positioned; size it with a width and it stays round. No glow, no motion.
+ * .halo-dim is the fainter outer ring.
  */
 .halo {
   position: absolute;
   aspect-ratio: 1;
   border-radius: 9999px;
   pointer-events: none;
-  --ring: clamp(4px, 0.8vw, 9px);
-  border: var(--ring) solid rgb(255 255 255 / 0.95);
-  box-shadow:
-    0 0 24px rgb(170 186 255 / 0.55),
-    0 0 90px rgb(59 91 255 / 0.4),
-    inset 0 0 24px rgb(170 186 255 / 0.35);
+  border: 1px solid rgb(237 234 228 / 0.14);
 }
 
 .halo-dim {
-  border-color: rgb(255 255 255 / 0.18);
-  box-shadow:
-    0 0 40px rgb(59 91 255 / 0.16),
-    inset 0 0 30px rgb(59 91 255 / 0.1);
-}
-
-@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
-  .halo:not(.halo-dim)::before {
-    content: "";
-    position: absolute;
-    inset: calc(var(--ring) * -1.5);
-    border-radius: inherit;
-    background: conic-gradient(from 0deg, transparent 0 70%, rgb(200 212 255 / 0.9) 84%, transparent 92%);
-    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring) * 2), #000 calc(100% - var(--ring) * 1.9));
-    mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring) * 2), #000 calc(100% - var(--ring) * 1.9));
-    animation: halo-spin 8s linear infinite;
-    will-change: transform;
-  }
-}
-
-@keyframes halo-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  border-color: rgb(237 234 228 / 0.07);
 }
 
 .panel {
@@ -131,13 +106,27 @@ body {
   border: 1px solid var(--color-line);
 }
 
-/* A room code, printed like a ticket stub. */
+/*
+ * Before the session is known, the home greeting draws both of its versions
+ * and these show the one the first-paint hint picked (layout.tsx sets
+ * data-auth and --wp-name on <html>), so the page never shifts to swap them.
+ */
+html:not([data-auth="in"]) .auth-in,
+html[data-auth="in"] .auth-out {
+  display: none;
+}
+
+.wp-name::before {
+  content: var(--wp-name, "");
+}
+
+/* A room code: set in mono, spaced out, on a hairline. */
 .ticket {
   font-family: var(--font-mono);
-  letter-spacing: 0.2em;
-  border: 1px dashed rgb(90 119 255 / 0.55);
-  background: rgb(59 91 255 / 0.08);
-  color: var(--color-cobalt-soft);
+  letter-spacing: 0.16em;
+  border: 1px solid var(--color-line-strong);
+  background: rgb(255 255 255 / 0.03);
+  color: var(--color-cream);
 }
 
 .text-balance {
@@ -160,10 +149,10 @@ body {
 @keyframes pulse-dot {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgb(111 224 176 / 0.5);
+    box-shadow: 0 0 0 0 rgb(201 174 128 / 0.45);
   }
   50% {
-    box-shadow: 0 0 0 5px rgb(111 224 176 / 0);
+    box-shadow: 0 0 0 4px rgb(201 174 128 / 0);
   }
 }
 
@@ -234,6 +223,7 @@ body {
 .stage:fullscreen .stage-screen {
   flex: 1;
   min-height: 0;
+  margin: 0;
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -249,12 +239,7 @@ body {
   margin: 0;
   border-radius: 0;
   border-width: 1px 0 0;
-  background: rgb(5 5 7 / 0.92);
-}
-
-/* The ambilight is only there to spill onto a page background. */
-.stage:fullscreen img[aria-hidden="true"] {
-  display: none;
+  background: rgb(11 11 12 / 0.94);
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -290,7 +275,7 @@ input[type="range"]::-webkit-slider-thumb {
   height: 14px;
   border-radius: 999px;
   background: var(--color-cream);
-  box-shadow: 0 0 0 5px rgb(59 91 255 / 0.35);
+  box-shadow: 0 0 0 4px rgb(237 234 228 / 0.14);
   transition: transform 0.15s;
 }
 
@@ -308,7 +293,7 @@ input[type="range"]::-moz-range-thumb {
   border: none;
   border-radius: 999px;
   background: var(--color-cream);
-  box-shadow: 0 0 0 5px rgb(59 91 255 / 0.35);
+  box-shadow: 0 0 0 4px rgb(237 234 228 / 0.14);
 }
 
 /* A finger needs a bigger thumb and a taller hit area than a cursor does. */

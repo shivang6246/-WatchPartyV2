@@ -38,14 +38,14 @@ function LoginForm() {
       eyebrow="Welcome back"
       title={
         <>
-          Take your <span className="font-serif font-normal italic text-cobalt-soft">seat.</span>
+          Take your <span className="font-serif font-normal italic">seat.</span>
         </>
       }
       subtitle="Sign in to host rooms and find the ones you have joined."
       footer={
         <>
           New here?{" "}
-          <Link className="font-medium text-cobalt-soft underline-offset-4 hover:underline" href="/register">
+          <Link className="font-medium text-gold underline-offset-4 hover:underline" href="/register">
             Create an account
           </Link>
         </>

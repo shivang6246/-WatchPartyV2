@@ -49,6 +49,7 @@ export interface PlaybackMessage {
   speed?: number;
   durationMs?: number | null;
   sequence?: number;
+  /** Outbound the event's anchor; inbound, optionally, when the member acted (server clock). */
   serverTs?: number;
   memberId?: string | null;
 }
@@ -201,3 +202,48 @@ export type ActivityEvent =
 
 /** Must match ChatService.REACTIONS on the backend, which rejects anything else. */
 export const REACTIONS = ["👍", "😂", "😮", "😢", "❤️", "🔥", "👏", "🎉"] as const;
+
+/** The open room a friend is in right now; see FriendDtos.WatchingView. */
+export interface FriendWatching {
+  code: string;
+  title: string;
+  platform: Platform;
+  videoTitle?: string | null;
+  videoThumbnail?: string | null;
+  /** People present in that room, the friend included. */
+  watching: number;
+}
+
+export interface FriendView {
+  userId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  since?: string | null;
+  /** Absent when they are not in a room, or keep their activity to themselves. */
+  watching?: FriendWatching | null;
+}
+
+export interface FriendRequestView {
+  id: string;
+  userId: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  createdAt: string;
+}
+
+export interface FriendsOverview {
+  friends: FriendView[];
+  incoming: FriendRequestView[];
+  outgoing: FriendRequestView[];
+  shareActivity: boolean;
+}
+
+/** What the home screen and the tab bar poll. */
+export interface FriendActivity {
+  watching: FriendView[];
+  incomingRequests: number;
+  friendCount: number;
+}
+
+/** How you relate to someone in your room, for the People tab. */
+export type FriendRelation = "friend" | "outgoing" | "incoming";

@@ -153,6 +153,14 @@ is *asking for*; the server validates it against the media duration, re-stamps
 it with its own clock and only then writes state. Position reports on the
 heartbeat are telemetry, and drive the host's "N members behind" indicator.
 
+**Anchored at the press.** The host's own player moves the moment they press,
+so the room's state has to start from that moment too, or the echo would find
+the host ahead by the trip to the server and seek them back. An intent may say
+when it was pressed (on the client's synced clock); the server anchors the event
+there, never in the future, never more than 1.5 s back, and never before the
+state it replaces. The only database read before the broadcast is the caller's
+membership; the history row is written after everyone has been told.
+
 ## Data model on Supabase (Postgres)
 
 Six tables: `app_user`, `refresh_token`, `room`, `room_member`,
