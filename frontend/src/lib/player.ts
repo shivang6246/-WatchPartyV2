@@ -1,26 +1,21 @@
-/**
- * The one interface the sync engine drives. YouTube, a plain video element and
- * anything added later all look the same from here, which is what keeps the
- * engine free of player-specific branches.
- */
 /** One selectable rendition. `auto` is always present when there is a choice. */
 export interface QualityLevel {
   id: string;
   label: string;
 }
 
-/**
- * Something the viewer did with a player's own controls (YouTube's bar), as
- * opposed to the sync engine moving the player. The position is where the
- * player is now, which is what the room should follow.
- */
-export interface ViewerAction {
-  type: "play" | "pause" | "seek";
-  positionMs: number;
-  /** When it happened (Date.now()), which is where the room anchors it. */
-  at: number;
+/** A captions language the viewer may turn on. */
+export interface CaptionTrack {
+  id: string;
+  label: string;
 }
 
+/**
+ * The one interface the room's player (PlayerSurface) and the sync engine
+ * drive. YouTube, a plain video element and anything added later all look the
+ * same from here, which keeps the engine free of player-specific branches.
+ * Every player is chromeless: WatchParty draws all the controls.
+ */
 export interface PlayerHandle {
   play(): void;
   pause(): void;
@@ -50,6 +45,20 @@ export interface PlayerHandle {
    * whole stage instead, which is what keeps the room's controls visible.
    */
   requestNativeFullscreen?(): boolean;
+  /** How much is loaded, 0 to 1, for the seek bar's buffered track. */
+  getBufferedFraction?(): number;
+  /** The playback speeds this player honours, for the host's speed menu. */
+  getRates?(): number[];
+  /**
+   * Captions, per viewer and never synced. The list may be empty until they
+   * have been turned on once (YouTube only reports its tracks then).
+   */
+  getCaptionTracks?(): CaptionTrack[];
+  getCaptionTrack?(): string | null;
+  /** A track id, "auto" for the best match to the viewer's language, or null for off. */
+  setCaptionTrack?(id: string | null): void;
+  /** Picture-in-picture, where the browser has it for this player (a video element). */
+  togglePictureInPicture?(): void;
   /**
    * Whether the player is actually advancing, which can differ from what it
    * was last told: YouTube's seekTo resumes playback unless the player is

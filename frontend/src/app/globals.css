@@ -208,9 +208,9 @@ html[data-auth="in"] .auth-out {
 
 /*
  * Fullscreen puts the whole stage up, not the bare player, so the room's own
- * transport, sync readout and reactions come with it. The screen takes the
- * space that is left and the video fills it, since the 16:9 box that suits a
- * page would letterbox itself twice on a 16:9 display.
+ * controls, hint and reactions come with it. The screen takes the whole
+ * display and the video fills it, since the 16:9 box that suits a page would
+ * letterbox itself twice on a 16:9 display.
  */
 .stage:fullscreen {
   display: flex;
@@ -235,11 +235,24 @@ html[data-auth="in"] .auth-out {
   aspect-ratio: auto;
 }
 
-.stage:fullscreen .stage-transport {
-  margin: 0;
-  border-radius: 0;
-  border-width: 1px 0 0;
-  background: rgb(11 11 12 / 0.94);
+/* What a press on the player did (play, pause, ±10 s), shown where it happened. */
+@keyframes bezel {
+  0% {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+  18% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+
+.bezel {
+  animation: bezel 0.65s ease-out forwards;
 }
 
 .no-scrollbar::-webkit-scrollbar {
@@ -324,5 +337,10 @@ input[type="range"]::-moz-range-thumb {
   .reaction-float {
     animation: fade-in 0.2s ease-out reverse 2.6s forwards;
     transform: translate(-50%, -24px);
+  }
+
+  /* No zoom: the icon only appears and fades. */
+  .bezel {
+    animation: fade-in 0.5s ease-out reverse forwards;
   }
 }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HttpError, api, clearGuestToken, getAccessToken, readGuestToken, writeGuestToken } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { RoomConnection } from "@/lib/connection";
-import type { PlayerHandle, ViewerAction } from "@/lib/player";
+import type { PlayerHandle } from "@/lib/player";
 import { SyncEngine, type SyncDiagnostics } from "@/lib/sync";
 import type {
   CatalogItem,
@@ -75,21 +75,23 @@ export interface RoomSession {
   setBuffering: (buffering: boolean) => void;
   /** The player is stalled, so the stage can say so instead of looking frozen. */
   buffering: boolean;
-  /** The attached player, for the per-viewer controls: volume, quality, fullscreen. */
+  /** The attached player, for the per-viewer controls: volume, quality, captions, fullscreen. */
   player: () => PlayerHandle | null;
-  /**
-   * The viewer used the player's own controls (YouTube's bar). The host's
-   * action goes to the whole room; anyone else's is undone by the sync engine
-   * and explained with a hint.
-   */
-  viewerAction: (action: ViewerAction) => void;
-  /** A short-lived line for the stage, e.g. why a guest's pause did not stick. */
+  /** A short-lived line for the stage, e.g. why a guest's click did nothing. */
   hint: string | null;
+  /** Says why a play, pause or seek from this member will not happen: only the host may. */
+  explainLocked: () => void;
   play: () => void;
   pause: () => void;
   seek: (positionMs: number) => void;
   /** Jumps forwards or back from where the room is now, e.g. ±10 s. */
   skipBy: (deltaMs: number) => void;
+  /** Back to the start and playing, as one event ("Watch again"). */
+  restart: () => void;
+  /** The room's playback speed, for everyone. */
+  speed: number;
+  /** The host changes the room's speed (the server refuses anyone else). */
+  setSpeed: (rate: number) => void;
   /** Starts a player the browser refused to autoplay; call from a click. */
   resume: () => void;
   sendChat: (body: string) => void;
@@ -144,6 +146,7 @@ export function useRoom(code: string, invite: string | null): RoomSession {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  const [speed, setSpeedState] = useState(1);
   const [durationMs, setDurationMs] = useState<number | null>(null);
   const [buffering, setBufferingState] = useState(false);
   const [reactions, setReactions] = useState<LiveReaction[]>([]);
@@ -205,6 +208,7 @@ export function useRoom(code: string, invite: string | null): RoomSession {
         setMembers(withSelfPresent(joined.members, joined.selfMemberId));
         setPlaying(joined.playback.playing ?? false);
         playingRef.current = joined.playback.playing ?? false;
+        setSpeedState(joined.playback.speed ?? 1);
         setDurationMs(joined.playback.durationMs ?? null);
         setStatus("ready");
       } catch (ex) {
@@ -281,6 +285,7 @@ export function useRoom(code: string, invite: string | null): RoomSession {
         engineRef.current?.applyRemote(message);
         setPlaying(message.playing ?? false);
         playingRef.current = message.playing ?? false;
+        if (message.speed) setSpeedState(message.speed);
         if (message.action === "load") {
           // A new video: the old one's length must not linger on the bar.
           setDurationMs(message.durationMs ?? null);
@@ -507,15 +512,16 @@ export function useRoom(code: string, invite: string | null): RoomSession {
 
   /** @returns false when the socket is down and nothing was sent */
   const sendIntent = useCallback(
-    (action: "play" | "pause" | "seek", positionMs?: number, actedAt = Date.now()): boolean => {
+    (action: "play" | "pause" | "seek" | "rate", positionMs?: number, actedAt = Date.now(), speed?: number): boolean => {
       const connection = connectionRef.current;
       if (!connection) return false;
       return connection.sendPlayback({
         action,
         positionMs: Math.round(positionMs ?? engineRef.current?.projectedPositionMs() ?? 0),
-        // A seek keeps the room as it is: scrubbing a paused video must not
-        // start it, and scrubbing a playing one must not stop it.
-        playing: action === "seek" ? playingRef.current : action === "play",
+        // A seek or a speed change keeps the room as it is: scrubbing a paused
+        // video must not start it, and scrubbing a playing one must not stop it.
+        playing: action === "play" ? true : action === "pause" ? false : playingRef.current,
+        speed,
         durationMs: playerRef.current?.getDurationMs() ?? undefined,
         // When the viewer acted, on the server's clock. The room anchors the
         // change there (within bounds) instead of at the frame's arrival, so a
@@ -562,28 +568,23 @@ export function useRoom(code: string, invite: string | null): RoomSession {
     [],
   );
 
-  const viewerAction = useCallback(
-    (action: ViewerAction) => {
-      const current = roomRef.current;
-      if (!current) return;
-      // Already where the room is (play pressed on a room that plays, say, to
-      // get past an autoplay block): that is joining in, not a change.
-      if (action.type === "play" && playingRef.current) return;
-      if (action.type === "pause" && !playingRef.current) return;
-      const mayControl = !current.locked || current.selfRole === "host";
-      if (!mayControl) {
-        // The engine puts the player back on its next tick; say why.
-        showHint("Only the host can play, pause or seek.");
+  const explainLocked = useCallback(() => showHint("Only the host can play, pause or seek."), [showHint]);
+
+  /**
+   * The room's speed, host only (the server refuses a rate change from anyone
+   * else, locked or not). Applied to this player at once and held, like a
+   * press, until the echo; the echo then sets it on everyone's player.
+   */
+  const setSpeed = useCallback(
+    (rate: number) => {
+      if (roomRef.current?.selfRole !== "host") {
+        showHint("Only the host can change the speed.");
         return;
       }
+      if (!sendIntent("rate", undefined, Date.now(), rate)) return;
       engineRef.current?.holdLocal(VIEWER_HOLD_MS);
-      if (!sendIntent(action.type, Math.max(0, action.positionMs), action.at)) return;
-      // The room is doing what the host just did, before the echo says so: a
-      // seek right behind this play must not carry the old playing flag.
-      if (action.type !== "seek") {
-        playingRef.current = action.type === "play";
-        setPlaying(playingRef.current);
-      }
+      playerRef.current?.setRate(rate);
+      setSpeedState(rate);
     },
     [sendIntent, showHint],
   );
@@ -705,8 +706,8 @@ export function useRoom(code: string, invite: string | null): RoomSession {
     setBuffering,
     buffering,
     player: () => playerRef.current,
-    viewerAction,
     hint,
+    explainLocked,
     play: () => intent("play"),
     pause: () => intent("pause"),
     seek: (positionMs: number) => intent("seek", Math.max(0, positionMs)),
@@ -715,6 +716,14 @@ export function useRoom(code: string, invite: string | null): RoomSession {
       const target = Math.max(0, from + deltaMs);
       intent("seek", durationMs ? Math.min(target, durationMs) : target);
     },
+    restart: () => {
+      // One seek that carries playing, not a seek and then a play: two frames
+      // can be handled in either order, and the seek's old "paused" could win.
+      playingRef.current = true;
+      intent("seek", 0);
+    },
+    speed,
+    setSpeed,
     resume: () => engineRef.current?.userStart(),
     sendChat: (body: string) => {
       connectionRef.current?.sendChat(body);

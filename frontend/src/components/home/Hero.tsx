@@ -24,28 +24,50 @@ const START_AT_S = 4;
 const START_DELAY_MS = 900;
 const PLAYLIST_SIZE = 12;
 /**
- * YouTube draws its own title bar and buttons over the first seconds of every
- * video, controls off or not. The still stays up until they have gone.
+ * YouTube draws its own title bar and buttons over the first seconds of
+ * playback, controls off or not. The still stays up until they have gone.
  */
 const YOUTUBE_CHROME_MS = 3200;
+/** How often the player is checked for having stopped when it should play. */
+const WATCH_EVERY_MS = 2000;
+/** Checks it may spend stopped, being asked to play, before a tap is offered. */
+const BLOCKED_AFTER_CHECKS = 3;
 
+/**
+ * The home screen's trailer is our own player: YouTube's embed is only the
+ * picture (chromeless, never clickable), and everything around it is drawn
+ * here. The still covers the embed whenever it is not actually playing, so
+ * YouTube's own paused screen, title bar and "More videos" are never seen.
+ */
 interface Hero {
   item: CatalogItem | null;
   /** Counts every change of trailer, so a one-trailer playlist still replays. */
   turn: number;
   /** lg and up. Followed live, so a tablet turned sideways gets the wide look. */
   wide: boolean;
-  /** Motion allowed and not saving data: the trailer plays. Otherwise its still. */
+  /** Motion allowed and not saving data: the trailer plays by itself. */
   motion: boolean;
-  /** The trailer is actually playing. */
+  /** There is (or is about to be) a player: by itself, or because the viewer asked. */
+  wantsPlayer: boolean;
+  /** The trailer is actually playing right now. */
   showing: boolean;
   setShowing: (showing: boolean) => void;
   /** Playing, and past YouTube's opening overlay: the trailer may be seen. */
   revealed: boolean;
+  /**
+   * It should be playing but will not start by itself: the browser or the
+   * device blocks autoplay (an iPhone in Low Power Mode, a strict setting).
+   * Only a tap can start it, so the play control asks for one.
+   */
+  blocked: boolean;
+  setBlocked: (blocked: boolean) => void;
+  /** The viewer paused it; nothing restarts it until they press play. */
+  userPausedRef: MutableRefObject<boolean>;
   muted: boolean;
   progress: number;
   setProgress: (progress: number) => void;
   next: () => void;
+  togglePlay: () => void;
   toggleSound: () => void;
   playerRef: MutableRefObject<YT.Player | null>;
 }
@@ -70,19 +92,22 @@ function shuffled<T>(items: T[]): T[] {
 /**
  * The home screen's backdrop: one of the month's most-watched film trailers,
  * playing muted behind the top of the page, a different one each visit.
- * The provider holds the playlist so the backdrop and the "Now showing" card
- * agree on what is on.
+ * The provider holds the playlist and the player's state, so the backdrop and
+ * the "Now showing" controls agree on what is on.
  */
 export function HeroProvider({ children }: { children: ReactNode }) {
   const [items, setItems] = useState<CatalogItem[]>([]);
   const [index, setIndex] = useState(0);
   const [wide, setWide] = useState(false);
   const [motion, setMotion] = useState(false);
+  const [started, setStarted] = useState(false);
   const [showing, setShowing] = useState(false);
   const [revealed, setRevealed] = useState(false);
+  const [blocked, setBlocked] = useState(false);
   const [muted, setMuted] = useState(true);
   const [progress, setProgress] = useState(0);
   const playerRef = useRef<YT.Player | null>(null);
+  const userPausedRef = useRef(false);
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 1024px)");
@@ -90,7 +115,7 @@ export function HeroProvider({ children }: { children: ReactNode }) {
     onWidth();
     query.addEventListener("change", onWidth);
     // A playing trailer costs data and battery: someone who asked for less
-    // motion or less data gets the still instead.
+    // motion or less data gets the still, and can still press play.
     const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
     setMotion(!calm && !saveData);
@@ -111,6 +136,8 @@ export function HeroProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Shown a moment after it starts playing (YouTube's overlay), hidden the
+  // moment it stops, whatever stopped it.
   useEffect(() => {
     if (!showing) {
       setRevealed(false);
@@ -121,9 +148,31 @@ export function HeroProvider({ children }: { children: ReactNode }) {
   }, [showing]);
 
   const next = useCallback(() => {
+    // Asking for the next one is asking for it to play.
+    userPausedRef.current = false;
     setShowing(false);
     setProgress(0);
     setIndex((current) => current + 1);
+  }, []);
+
+  const togglePlay = useCallback(() => {
+    const player = playerRef.current;
+    if (!player?.playVideo) {
+      // No player yet (reduced motion, Save-Data, or still loading): the
+      // viewer asked for the trailer, so make one now.
+      userPausedRef.current = false;
+      setStarted(true);
+      return;
+    }
+    if (player.getPlayerState?.() === YT.PlayerState.PLAYING) {
+      userPausedRef.current = true;
+      player.pauseVideo();
+    } else {
+      // Inside the tap, which is the one thing an autoplay block accepts.
+      userPausedRef.current = false;
+      setBlocked(false);
+      player.playVideo();
+    }
   }, []);
 
   const toggleSound = useCallback(() => {
@@ -140,25 +189,58 @@ export function HeroProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const item = items.length > 0 ? items[index % items.length] : null;
+  const wantsPlayer = motion || started;
 
   const value = useMemo<Hero>(
-    () => ({ item, turn: index, wide, motion, showing, setShowing, revealed, muted, progress, setProgress, next, toggleSound, playerRef }),
-    [item, index, wide, motion, showing, revealed, muted, progress, next, toggleSound],
+    () => ({
+      item,
+      turn: index,
+      wide,
+      motion,
+      wantsPlayer,
+      showing,
+      setShowing,
+      revealed,
+      blocked,
+      setBlocked,
+      userPausedRef,
+      muted,
+      progress,
+      setProgress,
+      next,
+      togglePlay,
+      toggleSound,
+      playerRef,
+    }),
+    [item, index, wide, motion, wantsPlayer, showing, revealed, blocked, muted, progress, next, togglePlay, toggleSound],
   );
 
   return <HeroContext.Provider value={value}>{children}</HeroContext.Provider>;
 }
 
 /**
- * The picture itself, behind the hero at every width: the trailer's still at
- * once, and the trailer fading in over it once it is playing and YouTube's
- * opening overlay has gone. It pauses when the tab is hidden or the hero is
- * scrolled away. On a wide screen it is the scenery; below lg the cards cover
- * most of it, so it is dimmed to a faded, low-opacity layer of motion behind
- * them rather than a picture they would seem to sit on.
+ * The picture itself, behind the hero: the trailer's still at once, and the
+ * trailer fading in over it only while it is actually playing and past
+ * YouTube's opening overlay. It pauses when the tab is hidden or the hero is
+ * scrolled away, asks again if something else stopped it, and says so
+ * (Hero.blocked) when it will not start without a tap.
  */
 export function HeroBackdrop() {
-  const { item, turn, wide, motion, showing, setShowing, revealed, setProgress, next, playerRef } = useHero();
+  const {
+    item,
+    turn,
+    wide,
+    motion,
+    wantsPlayer,
+    showing,
+    setShowing,
+    revealed,
+    setBlocked,
+    userPausedRef,
+    setProgress,
+    next,
+    playerRef,
+  } = useHero();
   const boxRef = useRef<HTMLDivElement | null>(null);
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [poster, setPoster] = useState<string | null>(null);
@@ -169,16 +251,17 @@ export function HeroBackdrop() {
   const failuresRef = useRef(0);
   const ref = item?.ref ?? null;
 
-  // The widest still YouTube has on a wide screen; below lg, where it is
-  // drawn faint and small, hqdefault is plenty at a fraction of the bytes.
+  // The widest still YouTube has on a wide screen; on a phone hqdefault is
+  // plenty at a fraction of the bytes.
   useEffect(() => {
     setPoster(ref ? `https://i.ytimg.com/vi/${ref}/${wide ? "maxresdefault" : "hqdefault"}.jpg` : null);
   }, [ref, wide]);
 
-  // The player, made once, for the first trailer.
+  // The player, made once, for the first trailer: a beat after the page
+  // paints, or at once when the viewer pressed play.
   const created = useRef(false);
   useEffect(() => {
-    if (!motion || !ref || created.current) return;
+    if (!wantsPlayer || !ref || created.current) return;
     let cancelled = false;
     const timer = setTimeout(() => {
       void loadYouTubeApi().then((YTApi) => {
@@ -205,14 +288,22 @@ export function HeroBackdrop() {
             onReady: (event) => {
               // Muted is what lets it start without a tap, phones included.
               event.target.mute();
-              event.target.playVideo();
+              if (!userPausedRef.current) event.target.playVideo();
             },
             onStateChange: (event) => {
-              if (event.data === YTApi.PlayerState.PLAYING) {
+              const state = event.data;
+              if (state === YTApi.PlayerState.PLAYING) {
                 failuresRef.current = 0;
+                setBlocked(false);
                 setShowing(true);
+              } else if (state === YTApi.PlayerState.ENDED) {
+                nextRef.current();
+              } else if (state !== YTApi.PlayerState.BUFFERING) {
+                // Paused, cued or not started: whoever did it, the still
+                // covers YouTube's own paused screen. Buffering is only a
+                // pause in the picture, so it changes nothing.
+                setShowing(false);
               }
-              if (event.data === YTApi.PlayerState.ENDED) nextRef.current();
             },
             // Removed, private or not embeddable after all: on to the next one.
             onError: () => {
@@ -228,12 +319,12 @@ export function HeroBackdrop() {
           },
         });
       });
-    }, START_DELAY_MS);
+    }, motion ? START_DELAY_MS : 0);
     return () => {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [motion, ref, playerRef, setShowing]);
+  }, [wantsPlayer, motion, ref, playerRef, setShowing, setBlocked, userPausedRef]);
 
   // Later trailers load into the same player.
   const loadedTurn = useRef(turn);
@@ -244,7 +335,7 @@ export function HeroBackdrop() {
     if (ref && player && created.current) player.loadVideoById?.({ videoId: ref, startSeconds: START_AT_S });
   }, [turn, ref, playerRef]);
 
-  // How far into the trailer, for the card's hairline.
+  // How far into the trailer, for the progress hairline.
   useEffect(() => {
     if (!showing) return;
     const timer = setInterval(() => {
@@ -255,29 +346,54 @@ export function HeroBackdrop() {
     return () => clearInterval(timer);
   }, [showing, playerRef, setProgress]);
 
-  // Nobody watching it, nothing playing: a hidden tab or a hero scrolled
-  // away. The box exists once there is an item.
+  // Plays only while someone can see it: paused in a hidden tab or with the
+  // hero scrolled away. And kept playing otherwise: a browser can pause a
+  // muted trailer on its own (power saving, a tab coming back), so a stopped
+  // player is asked again, and one that will not start is reported blocked,
+  // which offers a tap. The box exists once there is an item.
   const hasItem = ref !== null;
   useEffect(() => {
-    if (!motion || !hasItem) return;
+    if (!wantsPlayer || !hasItem) return;
     let onScreen = true;
+    let stoppedChecks = 0;
+    const wanted = () => onScreen && !document.hidden && !userPausedRef.current;
     const apply = () => {
       const player = playerRef.current;
       if (!player?.playVideo) return;
-      if (onScreen && !document.hidden) player.playVideo();
-      else player.pauseVideo();
+      if (wanted()) player.playVideo();
+      else if (!onScreen || document.hidden) player.pauseVideo();
     };
     const observer = new IntersectionObserver(([entry]) => {
       onScreen = entry.isIntersecting;
+      stoppedChecks = 0;
       apply();
     });
     if (boxRef.current) observer.observe(boxRef.current);
-    document.addEventListener("visibilitychange", apply);
+    const onVisibility = () => {
+      stoppedChecks = 0;
+      apply();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    const watch = setInterval(() => {
+      const player = playerRef.current;
+      if (!player?.getPlayerState) return;
+      const state = player.getPlayerState();
+      if (!wanted() || state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
+        stoppedChecks = 0;
+        return;
+      }
+      stoppedChecks += 1;
+      if (stoppedChecks < BLOCKED_AFTER_CHECKS) player.playVideo();
+      else setBlocked(true);
+    }, WATCH_EVERY_MS);
+
     return () => {
       observer.disconnect();
-      document.removeEventListener("visibilitychange", apply);
+      document.removeEventListener("visibilitychange", onVisibility);
+      clearInterval(watch);
     };
-  }, [motion, hasItem, playerRef]);
+  }, [wantsPlayer, hasItem, playerRef, userPausedRef, setBlocked]);
 
   useEffect(
     () => () => {
@@ -306,7 +422,7 @@ export function HeroBackdrop() {
           src={poster}
           alt=""
           onError={() => setPoster(item.thumbnail && poster !== item.thumbnail ? item.thumbnail : null)}
-          className={`fade-in absolute inset-0 h-full w-full object-cover opacity-25 lg:opacity-70 ${letterboxed ? "scale-[1.34]" : ""}`}
+          className={`fade-in absolute inset-0 h-full w-full object-cover opacity-45 lg:opacity-70 ${letterboxed ? "scale-[1.34]" : ""}`}
         />
       ) : null}
       {/* The iframe is sized to cover the box whatever its shape, and scaled
@@ -314,19 +430,18 @@ export function HeroBackdrop() {
           that a 4:3 trailer's side bars fall outside the box. */}
       <div
         ref={hostRef}
-        className={`absolute inset-0 transition-opacity duration-1000 [container-type:size] [&_iframe]:absolute [&_iframe]:left-1/2 [&_iframe]:top-1/2 [&_iframe]:h-[max(100cqh,56.25cqw)] [&_iframe]:w-[max(100cqw,177.78cqh)] [&_iframe]:-translate-x-1/2 [&_iframe]:-translate-y-1/2 [&_iframe]:scale-[1.36] ${
-          revealed ? "opacity-30 lg:opacity-85" : "opacity-0"
+        className={`absolute inset-0 transition-opacity duration-700 [container-type:size] [&_iframe]:absolute [&_iframe]:left-1/2 [&_iframe]:top-1/2 [&_iframe]:h-[max(100cqh,56.25cqw)] [&_iframe]:w-[max(100cqw,177.78cqh)] [&_iframe]:-translate-x-1/2 [&_iframe]:-translate-y-1/2 [&_iframe]:scale-[1.36] ${
+          revealed ? "opacity-60 lg:opacity-85" : "opacity-0"
         }`}
       />
-      {/* Enough dark for the words on top to read over any frame. A wide
-          screen darkens the left, where the greeting is; below lg the cards
-          span the width, so it is an even veil that fades out at the top and
-          the bottom instead. */}
-      <div className="absolute inset-0 bg-ink/30 lg:bg-ink/20" />
+      {/* Enough dark for the words on top to read over any frame: the left,
+          where the greeting is, on a wide screen; an even veil on a phone.
+          Both fade out at the top and into the page at the bottom. */}
+      <div className="absolute inset-0 bg-ink/25 lg:bg-ink/20" />
       <div className="absolute inset-0 hidden bg-gradient-to-r from-ink/90 via-ink/45 to-transparent lg:block" />
       <div className="absolute inset-y-0 right-0 hidden w-1/4 bg-gradient-to-l from-ink/60 to-transparent lg:block" />
       <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-ink/85 to-transparent lg:h-40" />
-      <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-ink via-ink/70 to-transparent lg:h-3/5 lg:via-ink/80" />
+      <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-ink via-ink/70 to-transparent lg:h-3/5 lg:via-ink/80" />
     </div>
   );
 }
@@ -336,6 +451,19 @@ const PLAY_MARK = (
     <path d="M8 5.8v12.4c0 .8.9 1.3 1.6.8l9.4-6.2a1 1 0 0 0 0-1.6L9.6 5c-.7-.5-1.6 0-1.6.8Z" />
   </svg>
 );
+
+function PlayPauseIcon({ playing }: { playing: boolean }) {
+  return playing ? (
+    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current" aria-hidden>
+      <rect x="6.5" y="5" width="3.8" height="14" rx="1.2" />
+      <rect x="13.7" y="5" width="3.8" height="14" rx="1.2" />
+    </svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4 fill-current" aria-hidden>
+      <path d="M8 5.8v12.4c0 .8.9 1.3 1.6.8l9.4-6.2a1 1 0 0 0 0-1.6L9.6 5c-.7-.5-1.6 0-1.6.8Z" />
+    </svg>
+  );
+}
 
 function SoundIcon({ muted }: { muted: boolean }) {
   return (
@@ -353,24 +481,62 @@ function SoundIcon({ muted }: { muted: boolean }) {
   );
 }
 
-/** What the backdrop is playing, the sound, and one tap to watch it with friends. */
+/** A round control drawn at 34px and tapped at 44. `invite` rings it in gold: it wants a tap. */
+function RoundControl({
+  label,
+  onClick,
+  active = false,
+  invite = false,
+  children,
+}: {
+  label: string;
+  onClick: () => void;
+  active?: boolean;
+  invite?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="grid h-11 w-11 shrink-0 place-items-center rounded-full transition active:scale-95"
+    >
+      <span
+        className={`grid h-[34px] w-[34px] place-items-center rounded-full border ${
+          invite ? "animate-pulse-dot border-gold/70 text-gold" : active ? "border-gold/50 bg-gold/10 text-gold" : "border-line text-cream"
+        }`}
+      >
+        {children}
+      </span>
+    </button>
+  );
+}
+
+/**
+ * The trailer's controls, and one tap to watch it with friends: play/pause,
+ * sound and next, over a progress hairline. Pausing is also what anyone who
+ * would rather not have moving pictures on the page needs.
+ */
 export function NowShowing() {
-  const { item, motion, revealed, muted, progress, next, toggleSound } = useHero();
+  const { item, wantsPlayer, showing, revealed, blocked, muted, progress, next, togglePlay, toggleSound } = useHero();
   const { start, busyRef } = useStartParty();
   if (!item) return null;
   const busy = busyRef !== null && busyRef === (item.ref ?? item.url);
   const watchTogether = () => void start(item).catch(() => undefined);
   const mark = busy ? <Spinner className="h-4 w-4" /> : PLAY_MARK;
   const sound = muted ? "Turn the sound on" : "Mute";
+  const playLabel = showing ? "Pause the trailer" : "Play the trailer";
 
   return (
     <aside
       aria-label="Now showing"
       className="fade-in relative overflow-hidden rounded-2xl border border-white/10 bg-ink/60 lg:w-[21.5rem] lg:shrink-0"
     >
-      {/* Below lg: one line over the backdrop, the sound and the play mark,
-          at one fixed height, which the hero reserves. */}
-      <div className="flex items-center gap-1 p-[7px] pl-3.5 sm:pl-4 lg:hidden">
+      {/* Below lg: one line, the trailer's controls and the way in, at one
+          fixed height, which the hero reserves. */}
+      <div className="flex items-center gap-0.5 p-[7px] pl-3.5 sm:pl-4 lg:hidden">
         <div className="min-w-0 flex-1 pr-1">
           <p className="flex items-center gap-1.5 text-[9.5px] font-semibold uppercase tracking-[0.18em] text-gold sm:text-[10px]">
             {revealed ? <LiveDot /> : null}
@@ -378,25 +544,21 @@ export function NowShowing() {
           </p>
           <p className="mt-0.5 truncate text-[13px] font-medium">{item.title}</p>
         </div>
-        {motion ? (
-          <button
-            type="button"
-            onClick={toggleSound}
-            aria-label={sound}
-            title={sound}
-            className="grid h-11 w-11 shrink-0 place-items-center rounded-full transition active:scale-95"
-          >
-            <span className={`grid h-[34px] w-[34px] place-items-center rounded-full border ${muted ? "border-line text-cream" : "border-gold/50 bg-gold/10 text-gold"}`}>
-              <SoundIcon muted={muted} />
-            </span>
-          </button>
+        <RoundControl label={playLabel} onClick={togglePlay} invite={blocked}>
+          <PlayPauseIcon playing={showing} />
+        </RoundControl>
+        {wantsPlayer ? (
+          <RoundControl label={sound} onClick={toggleSound} active={!muted}>
+            <SoundIcon muted={muted} />
+          </RoundControl>
         ) : null}
         <button
           type="button"
           onClick={watchTogether}
           disabled={busy}
           aria-label="Watch together"
-          className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cream text-ink transition hover:bg-white active:scale-95 disabled:opacity-40"
+          title="Watch together"
+          className="ml-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full bg-cream text-ink transition hover:bg-white active:scale-95 disabled:opacity-40"
         >
           {mark}
         </button>
@@ -416,13 +578,22 @@ export function NowShowing() {
             Watch together
           </Button>
           <span className="flex-1" />
+          <IconButton
+            aria-label={playLabel}
+            title={playLabel}
+            onClick={togglePlay}
+            active={blocked}
+            className={blocked ? "animate-pulse-dot" : ""}
+          >
+            <PlayPauseIcon playing={showing} />
+          </IconButton>
           <IconButton aria-label="Next trailer" title="Next trailer" onClick={next}>
             <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
               <path d="M6 6l8 6-8 6z" strokeLinejoin="round" />
               <path d="M18 6v12" strokeLinecap="round" />
             </svg>
           </IconButton>
-          {motion ? (
+          {wantsPlayer ? (
             <IconButton aria-label={sound} title={muted ? "Sound on" : "Mute"} onClick={toggleSound} active={!muted}>
               <SoundIcon muted={muted} />
             </IconButton>
@@ -430,7 +601,7 @@ export function NowShowing() {
         </div>
       </div>
 
-      {motion && revealed ? (
+      {revealed ? (
         <div className="absolute inset-x-0 bottom-0 h-[2px] bg-white/10" aria-hidden>
           <div className="h-full bg-cream/80 transition-[width] duration-500" style={{ width: `${progress * 100}%` }} />
         </div>

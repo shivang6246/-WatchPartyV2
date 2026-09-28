@@ -6,7 +6,7 @@ import HomeGreeting from "@/components/home/HomeGreeting";
 import MyRooms from "@/components/home/MyRooms";
 import TrendingRow from "@/components/home/TrendingRow";
 import VerifyNotice from "@/components/home/VerifyNotice";
-import { Eyebrow, Logo } from "@/components/ui";
+import { Accent, Logo } from "@/components/ui";
 
 /*
  * The home screen is a server component: the words and the layout arrive as
@@ -29,14 +29,14 @@ export default function HomePage() {
   return (
     <main className="spotlight w-full pb-32 lg:pb-16">
       <HeroProvider>
-        {/* The hero: a trailer from what is popular right now plays behind
-            it, full width, fading into the page at the bottom. Below lg it is
-            faint, a layer of motion behind the cards (see HeroBackdrop). */}
+        {/* The hero: the greeting over a trailer from what is popular right
+            now, playing full width and fading into the page at the bottom,
+            with what is showing. Nothing else sits on the picture. */}
         {/* Nothing that arrives late may move what is already on screen: the
             "Now showing" card has its space reserved (the row's min height on
             a wide screen, the hero's bottom padding below lg, sized to the
             compact card's one line). */}
-        <div className="relative isolate pb-24 lg:pb-20">
+        <div className="relative isolate min-h-[17rem] pb-24 sm:min-h-[19rem] lg:min-h-0 lg:pb-16">
           <HeroBackdrop />
           <div className={column}>
             <AppHeader />
@@ -47,15 +47,26 @@ export default function HomePage() {
                 <NowShowing />
               </div>
             </div>
+          </div>
+        </div>
+      </HeroProvider>
 
-            {/* One column on a phone; the two cards side by side from a
-                tablet up, where one full-width card is mostly empty. */}
-            <div className="mt-14 grid grid-cols-1 gap-3 sm:mt-16 md:grid-cols-[1.08fr_1fr] md:gap-4 lg:mt-12 lg:grid-cols-[1.25fr_1fr] lg:gap-5">
+      {/* The two ways in, as a section of their own under the hero, on the
+          page rather than over the trailer. */}
+      <section aria-labelledby="actions-h" className={`${column} pt-6 sm:pt-8 lg:pt-4`}>
+        <h2 id="actions-h" className="font-serif text-[22px] font-normal tracking-[-0.01em] sm:text-3xl">
+          Watch <Accent>together</Accent>
+        </h2>
+        <p className="mt-1 text-[13px] text-muted sm:text-sm">Start a room for your friends, or join one with its code.</p>
+
+        {/* One column on a phone; the two cards side by side from a tablet
+            up, where one full-width card is mostly empty. */}
+        <div className="mt-4 grid grid-cols-1 gap-3 sm:mt-5 md:grid-cols-[1.08fr_1fr] md:gap-4 lg:grid-cols-[1.25fr_1fr] lg:gap-5">
               {/* Below md one short row: title, a line, and the button on the
                   right, where the rings sit behind it. From md the full card. */}
               <section
                 aria-labelledby="start-h"
-                className="relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#17171a]/85 to-panel/85 px-4 py-3.5 md:block md:rounded-[18px] md:p-6 lg:rounded-[20px] lg:p-8"
+                className="relative grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-b from-[#17171a] to-panel px-4 py-3.5 md:block md:rounded-[18px] md:p-6 lg:rounded-[20px] lg:p-8"
               >
                 <div className="halo halo-dim -right-12 top-1/2 w-[150px] -translate-y-1/2 md:-right-14 md:w-[240px] lg:w-[300px]" aria-hidden />
                 <div className="halo -right-4 top-1/2 w-[96px] -translate-y-1/2 md:-right-5 md:w-[150px] lg:w-[190px]" aria-hidden />
@@ -69,8 +80,7 @@ export default function HomePage() {
                 </span>
                 {/* From md kept clear of the ring on the right. */}
                 <div className="relative min-w-0 md:max-w-[calc(100%-6rem)] lg:max-w-sm">
-                  <Eyebrow className="hidden md:block">Watch together</Eyebrow>
-                  <h2 id="start-h" className="font-serif text-[18px] font-normal leading-tight tracking-[-0.01em] md:mt-2 md:text-[28px] md:leading-[1.1] lg:mt-2.5 lg:text-4xl">
+                  <h2 id="start-h" className="font-serif text-[18px] font-normal leading-tight tracking-[-0.01em] md:text-[28px] md:leading-[1.1] lg:text-4xl">
                     Start a <span className="italic">watch party</span>
                   </h2>
                   <p className="mt-0.5 truncate text-[12px] text-muted md:mt-1.5 md:whitespace-normal md:text-[13px] md:leading-relaxed lg:mt-2 lg:text-sm">
@@ -86,7 +96,7 @@ export default function HomePage() {
 
               <section
                 aria-labelledby="join-h"
-                className="flex flex-col justify-center md:rounded-[18px] md:border md:border-white/10 md:bg-panel/85 md:p-5 lg:rounded-[20px] lg:p-8"
+                className="flex flex-col justify-center md:rounded-[18px] md:border md:border-white/10 md:bg-panel md:p-5 lg:rounded-[20px] lg:p-8"
               >
                 <h2 id="join-h" className="sr-only md:not-sr-only md:font-serif md:text-[22px] md:font-normal lg:text-2xl">
                   Have a code?
@@ -95,13 +105,11 @@ export default function HomePage() {
                 <JoinCodeForm className="md:mt-5 lg:mt-6" />
                 <p className="mt-2 px-2 text-[11px] text-faint md:hidden lg:block lg:px-1 lg:text-xs">Joining needs no account. Hosting needs a free one.</p>
               </section>
-            </div>
-          </div>
         </div>
-      </HeroProvider>
+      </section>
 
       <div className={column}>
-        <div className="space-y-8 lg:space-y-14">
+        <div className="mt-10 space-y-8 lg:mt-14 lg:space-y-14">
           <FriendsWatching />
           <MyRooms />
           <TrendingRow />

@@ -2,7 +2,7 @@
 
 import type Hls from "hls.js";
 import { useEffect, useRef, useState } from "react";
-import type { PlayerHandle, QualityLevel } from "@/lib/player";
+import type { CaptionTrack, PlayerHandle, QualityLevel } from "@/lib/player";
 
 interface Props {
   src: string;
@@ -32,6 +32,7 @@ export default function HostedPlayer({ src, onHandle, onBuffering, onEnded }: Pr
   endedRef.current = onEnded;
   // Re-announces the handle when the ladder arrives, so the menu appears.
   const [qualities, setQualities] = useState<QualityLevel[]>([]);
+  const [captions, setCaptions] = useState<CaptionTrack[]>([]);
 
   const isHls = /\.m3u8(\?|$)/i.test(src);
 
@@ -41,6 +42,7 @@ export default function HostedPlayer({ src, onHandle, onBuffering, onEnded }: Pr
     const playNatively = () => {
       video.src = src;
       setQualities([]);
+      setCaptions([]);
     };
     if (!isHls) {
       playNatively();
@@ -62,6 +64,16 @@ export default function HostedPlayer({ src, onHandle, onBuffering, onEnded }: Pr
         hlsRef.current = hls;
         hls.attachMedia(video);
         hls.loadSource(src);
+        // Subtitles in the stream become caption tracks (drawn by the
+        // browser over the video); announced like the ladder, when they arrive.
+        hls.on(HlsPlayer.Events.SUBTITLE_TRACKS_UPDATED, () => {
+          setCaptions(
+            hls.subtitleTracks.map((track, index) => ({
+              id: String(index),
+              label: track.name || track.lang || `Track ${index + 1}`,
+            })),
+          );
+        });
         hls.on(HlsPlayer.Events.MANIFEST_PARSED, () => {
           setQualities([
             AUTO,
@@ -146,6 +158,38 @@ export default function HostedPlayer({ src, onHandle, onBuffering, onEnded }: Pr
         }
         return false;
       },
+      getBufferedFraction: () => {
+        const duration = video.duration;
+        if (!Number.isFinite(duration) || duration <= 0 || video.buffered.length === 0) return 0;
+        // The range the playhead is in, which is the one the bar is about.
+        for (let i = 0; i < video.buffered.length; i++) {
+          if (video.buffered.start(i) <= video.currentTime && video.currentTime <= video.buffered.end(i)) {
+            return Math.min(1, video.buffered.end(i) / duration);
+          }
+        }
+        return 0;
+      },
+      // A video element takes any rate; these are the ones worth offering.
+      getRates: () => [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2],
+      getCaptionTracks: () => captions,
+      getCaptionTrack: () => {
+        const hls = hlsRef.current;
+        return hls && hls.subtitleTrack >= 0 ? String(hls.subtitleTrack) : null;
+      },
+      setCaptionTrack: (id: string | null) => {
+        const hls = hlsRef.current;
+        if (!hls) return;
+        const index = id === null ? -1 : id === "auto" ? 0 : Number(id);
+        hls.subtitleDisplay = index >= 0;
+        hls.subtitleTrack = index;
+      },
+      togglePictureInPicture:
+        typeof document !== "undefined" && document.pictureInPictureEnabled
+          ? () => {
+              if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => undefined);
+              else void video.requestPictureInPicture().catch(() => undefined);
+            }
+          : undefined,
       fineRateSupported: true,
     };
 
@@ -169,10 +213,11 @@ export default function HostedPlayer({ src, onHandle, onBuffering, onEnded }: Pr
       video.removeEventListener("ended", ended);
       onHandle(null);
     };
-  }, [src, qualities, onHandle, onBuffering]);
+  }, [src, qualities, captions, onHandle, onBuffering]);
 
   return (
     <div className="stage-frame aspect-video w-full overflow-hidden bg-black">
+      {/* No native controls: the room's own sit on top (PlayerSurface). */}
       <video ref={videoRef} playsInline className="h-full w-full" preload="auto" />
     </div>
   );

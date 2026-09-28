@@ -200,6 +200,9 @@ export class SyncEngine {
     if (!player || !this.state || !player.isReady()) return;
 
     this.clearNudge();
+    // The room's speed, every time: clearNudge only restores it after a
+    // nudge, so without this the host's speed change reached nobody.
+    player.setRate(this.state.speed);
     const target = this.projectedPositionMs();
     const offBy = Math.abs(player.getPositionMs() - target);
     const needsSeek = offBy > this.ladder.ignoreMs;
