@@ -135,7 +135,15 @@ public final class RoomDtos {
             UUID currentItemId,
             List<QueueItemView> queue,
             /** Set while a disconnected host's grace period runs: when it ends. */
-            Long hostAwayUntil) {}
+            Long hostAwayUntil,
+            /** Absent where no assistant is configured, so clients offer none. */
+            AssistantView assistant) {}
+
+    /**
+     * The room assistant as a client needs to know it: which author id marks
+     * its chat messages, and what it is called.
+     */
+    public record AssistantView(UUID memberId, String name) {}
 
     /** What an invited stranger may see before holding any token. */
     @JsonInclude(JsonInclude.Include.NON_NULL)

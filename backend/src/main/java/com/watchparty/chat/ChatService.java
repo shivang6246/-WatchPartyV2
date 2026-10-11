@@ -1,5 +1,6 @@
 package com.watchparty.chat;
 
+import com.watchparty.ai.RoomAssistant;
 import com.watchparty.common.ApiException;
 import com.watchparty.metrics.WatchPartyMetrics;
 import com.watchparty.ratelimit.RateLimits;
@@ -52,16 +53,19 @@ public class ChatService {
     private final RoomEventPublisher events;
     private final RedisRateLimiter limiter;
     private final WatchPartyMetrics metrics;
+    private final RoomAssistant assistant;
 
     public ChatService(
             ChatMessageRepository messages,
             RoomEventPublisher events,
             RedisRateLimiter limiter,
-            WatchPartyMetrics metrics) {
+            WatchPartyMetrics metrics,
+            RoomAssistant assistant) {
         this.messages = messages;
         this.events = events;
         this.limiter = limiter;
         this.metrics = metrics;
+        this.assistant = assistant;
     }
 
     /**
@@ -102,6 +106,9 @@ public class ChatService {
         metrics.chatMessage();
         // Sending a message ends "typing" without the client having to say so.
         publishTyping(room.getId(), member, false);
+        // After the message is out: a question for the assistant is a chat
+        // message first, and the answer follows it from another thread.
+        assistant.consider(room, member, saved, principalName);
     }
 
     /** A floating emoji over the video. Not stored; a muted member cannot send one. */

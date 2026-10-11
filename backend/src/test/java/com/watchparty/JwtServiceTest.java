@@ -32,7 +32,8 @@ class JwtServiceTest {
                 new AppProperties.YouTube("", "US"),
                 new AppProperties.Mail("WatchParty <no-reply@localhost>"),
                 new AppProperties.Verification(Duration.ofHours(24), null),
-                new AppProperties.Web("http://localhost:3000"));
+                new AppProperties.Web("http://localhost:3000"),
+                new AppProperties.Ai("", "gemini-3.5-flash-lite", 10, 500));
         return new JwtService(props);
     }
 

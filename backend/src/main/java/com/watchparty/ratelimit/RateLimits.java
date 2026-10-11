@@ -13,7 +13,8 @@ public final class RateLimits {
     public enum Key {
         IP,
         PRINCIPAL,
-        MEMBER
+        MEMBER,
+        ROOM
     }
 
     public static final Policy LOGIN_BURST = new Policy("login", 5, Duration.ofMinutes(1), Key.IP);
@@ -40,6 +41,12 @@ public final class RateLimits {
     public static final Policy REACTION = new Policy("reaction", 15, Duration.ofSeconds(10), Key.MEMBER);
     // Clients send "typing" at most every few seconds; this only stops abuse.
     public static final Policy TYPING = new Policy("typing", 20, Duration.ofSeconds(10), Key.MEMBER);
+    // Every question to the assistant spends a free quota the whole deployment
+    // shares, so one member cannot ask often, and neither can one room however
+    // many members take turns. The deployment-wide budget on top of these is
+    // configured: app.ai.requests-per-*.
+    public static final Policy AI_ASK = new Policy("ai-ask", 4, Duration.ofMinutes(1), Key.MEMBER);
+    public static final Policy AI_ROOM = new Policy("ai-room", 8, Duration.ofMinutes(1), Key.ROOM);
 
     private RateLimits() {}
 }

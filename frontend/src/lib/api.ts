@@ -280,7 +280,9 @@ export const api = {
   youtubeTrending: () => apiFetch<CatalogPage>("/api/v1/catalog/youtube/trending"),
 
   /** New film trailers. Public: the home backdrop plays one to signed-out visitors too. */
-  youtubeTrailers: () => apiFetch<CatalogPage>("/api/v1/catalog/youtube/trailers"),
+  // Public, and what the home screen's trailer waits on: sent at once, with
+  // no token, instead of queueing behind the session restore like the rest.
+  youtubeTrailers: () => apiFetch<CatalogPage>("/api/v1/catalog/youtube/trailers", { noAuth: true }),
 
   /** Resolves a pasted link to a title and thumbnail; needs no API key. */
   resolveLink: (url: string, platform?: string) =>

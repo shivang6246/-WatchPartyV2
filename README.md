@@ -16,7 +16,7 @@ Chrome extension (DRM)   --+     REST + STOMP/WS  +--> Redis 7              hot:
 cp .env.example .env
 ```
 
-Fill in three things:
+Fill in two things, and up to two more:
 
 1. **`DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`** — your Supabase
    project's **Session pooler** connection (Connect → Session pooler, port 5432),
@@ -25,6 +25,9 @@ Fill in three things:
 2. **`REDIS_PASSWORD`** and **`JWT_SECRET`** — `openssl rand -base64 48` each.
 3. **`YOUTUBE_API_KEY`** (optional) — a YouTube Data API v3 key. It turns on
    in-app search; without it the picker still works by pasting a link.
+4. **`GEMINI_API_KEY`** (optional) — a Google AI Studio key. It turns on the
+   room assistant ("@ai" in chat); without it there simply is none. See
+   [The room assistant](#the-room-assistant) for how to keep it free.
 
 ```bash
 docker compose up -d --build
@@ -69,9 +72,11 @@ cd frontend && npm run smoke
 Drives two real STOMP sessions against a running stack and checks the paths that
 matter: the picker and link resolution, room creation, ticket handshake, clock
 probes, fan-out, sequence assignment, seek clamping, locked-room rejection,
-mid-room video changes, chat and presence, reactions and typing, the queue,
-host hand-off, mute, removal (including the server closing the socket) and
-the metrics endpoint.
+mid-room video changes, chat and presence, the room assistant, reactions and
+typing, the queue, host hand-off, mute, removal (including the server closing
+the socket) and the metrics endpoint. With a `GEMINI_API_KEY` set, the
+assistant check asks one real question, so each run spends one request of the
+key's quota.
 
 To prove a room works across app instances -- the thing an in-JVM broker gets
 silently wrong -- run a second backend and split the clients across them:
@@ -109,6 +114,61 @@ The same sheet is the host's "change the video" control inside a room. Picking a
 new video resets the anchor — everyone lands at zero, paused — and every member
 gets both the new source and a fresh playback event, so nobody is left watching
 the old one.
+
+## The room assistant
+
+Anyone in a room can put `@ai` in a chat message and ask something: who
+directed this, what else the lead has been in, what to queue next. The answer
+arrives in the chat, for everyone, a second or two later.
+
+```
+"@ai who directed this?"  ->  stored and sent like any chat message
+                          ->  RoomAssistant: limits, then a worker thread
+                          ->  Spring AI ChatClient  ->  Gemini
+                          ->  the reply, stored and sent as a chat message
+```
+
+It is built on Spring AI's `ChatClient` over Gemini, and a few decisions are
+worth knowing:
+
+- **The answer is an ordinary chat message.** It is stored under a fixed author
+  id and goes out on the same topic in the same shape, so the Chrome extension
+  shows it with no change, a late joiner finds it in the history, and that
+  history is the only memory the assistant has: it is shown the last dozen
+  messages, its own included, each time it is asked.
+- **It knows the room, not the picture.** It is told the title and channel, how
+  far in the room is, what is queued and the recent chat. It cannot see or
+  hear the video and is told to say so, and to keep clear of spoilers past
+  the point the room has reached.
+- **It can only talk.** It is given no tools, so nothing typed in the chat (or
+  hidden in a video title) can make it touch playback, the queue or the room.
+- **No key is not an error**, as with YouTube search. With `GEMINI_API_KEY`
+  unset the room offers no assistant and `@ai` is ordinary chat.
+- **Replies are chat-sized**: a few sentences, cut to the 500 characters a
+  message may hold.
+
+### Keeping it free
+
+Gemini's free tier is a quota, not a trial: requests per minute and per day,
+per Google Cloud project, resetting at midnight Pacific. Two things keep the
+bill at zero.
+
+1. **Create the key in a project with no billing account**
+   (https://aistudio.google.com/apikey). On the free tier a spent quota is a
+   refusal, and the assistant tells whoever asked that it is out for now. Once
+   billing is switched on for that project the same key is charged per token
+   instead, from the first request.
+2. **The app keeps its own budget under Google's.** One member may ask 4 times
+   a minute and one room 8, and the whole deployment is held to
+   `AI_REQUESTS_PER_MINUTE` (10) and `AI_REQUESTS_PER_DAY` (500), counted in
+   Redis so they hold across instances. Set those two at or just under what
+   AI Studio's rate-limit page shows for your project and `GEMINI_MODEL`
+   (default `gemini-3.5-flash-lite`, the fastest and the most generous).
+
+One thing the free tier costs instead of money: Google may use what is sent to
+improve its products. What is sent is the question, the last dozen chat
+messages with their display names, and what is playing. The message box says
+so whenever a message is addressed to the assistant.
 
 ## How the sync engine works
 
@@ -258,6 +318,8 @@ is the backstop for someone who guesses their way in.
 - Synced play, pause, seek and rate with the drift ladder above
 - Text chat with history paging, 500-character cap, host mute
 - Emoji reactions that float over everyone's video, and typing indicators
+- A room assistant: `@ai` in the chat asks Gemini (through Spring AI) about
+  what is playing, and the answer lands in the chat for everyone
 - A queue: the host adds, reorders and removes videos; when one ends the next
   plays for everyone, or the host skips ahead
 - Host controls: change what is playing from the same picker, lock playback,
@@ -315,6 +377,7 @@ Two further calls the PRD did not settle:
 ```
 backend/src/main/java/com/watchparty/
   catalog/    source list, the YouTube search proxy, keyless link resolution
+  ai/         the room assistant: prompt, limits, Spring AI on Gemini
   security/   tokens, the JWT filter, the STOMP handshake interceptor
   room/       entities, authorization, the room REST surface
   sync/       Redis state, the sync engine, fan-out, snapshot and retention jobs

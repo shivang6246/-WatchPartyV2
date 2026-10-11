@@ -82,6 +82,15 @@ export interface RoomView {
   queue: QueueItem[];
   /** Set while a disconnected host's grace period runs: epoch millis it ends. */
   hostAwayUntil?: number | null;
+  /** Absent when the server has no assistant, so none is offered. */
+  assistant?: AssistantView | null;
+}
+
+/** The room assistant: a chat message starting "@ai" is a question for it. */
+export interface AssistantView {
+  /** The author id on every message it writes. It is never in the roster. */
+  memberId: string;
+  name: string;
 }
 
 export interface QueueItem {

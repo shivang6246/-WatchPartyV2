@@ -15,7 +15,8 @@ public record AppProperties(
         YouTube youtube,
         Mail mail,
         Verification verification,
-        Web web) {
+        Web web,
+        Ai ai) {
 
     public record Jwt(String secret, String keyId, String issuer, Duration accessTtl, Duration guestTtl) {}
 
@@ -56,6 +57,21 @@ public record AppProperties(
 
     /** Where the web client lives, for links inside emails. */
     public record Web(String baseUrl) {}
+
+    /**
+     * The room assistant, on Gemini. Without a key it is simply off.
+     *
+     * @param apiKey a Google AI Studio key, from a project with no billing
+     *     account so that running out of free quota is a refusal, never a charge
+     * @param requestsPerMinute what the whole deployment may send to the model
+     *     in a minute; keep it at or under the project's own limit
+     * @param requestsPerDay the same, per day
+     */
+    public record Ai(String apiKey, String model, int requestsPerMinute, int requestsPerDay) {
+        public boolean configured() {
+            return apiKey != null && !apiKey.isBlank();
+        }
+    }
 
     public record Google(String clientId, String clientSecret, String redirectUri, String postLoginRedirect) {
         public boolean configured() {

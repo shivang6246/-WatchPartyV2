@@ -3,10 +3,12 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Avatar } from "@/components/ui";
 import type { PresenceEvent } from "@/hooks/useRoom";
-import { REACTIONS, type ChatMessageView } from "@/lib/types";
+import { REACTIONS, type AssistantView, type ChatMessageView } from "@/lib/types";
 
 interface Props {
   messages: ChatMessageView[];
+  /** The room assistant, when the server has one: "@ai" in a message asks it. */
+  assistant?: AssistantView | null;
   /** Joins and departures, shown between the messages as they happen. */
   presence?: PresenceEvent[];
   selfMemberId: string | null;
@@ -28,6 +30,30 @@ function typingLine(names: string[]): string {
   if (names.length === 1) return `${names[0]} is typing`;
   if (names.length === 2) return `${names[0]} and ${names[1]} are typing`;
   return "Several people are typing";
+}
+
+/**
+ * A message is for the assistant when "@ai" stands in it as a word of its own;
+ * the server decides, with the same rule (AssistantPrompt.MENTION). No
+ * lookbehind here: older iOS Safari fails to parse one.
+ */
+const MENTION = /(^|\s)@ai\b[,:]?\s*/i;
+
+function Sparkle({ className = "" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
+      <path d="M12 3c.7 5.3 3.7 8.3 9 9-5.3.7-8.3 3.7-9 9-.7-5.3-3.7-8.3-9-9 5.3-.7 8.3-3.7 9-9Z" />
+    </svg>
+  );
+}
+
+/** The assistant's place in the avatar column: the logo's hairline ring, not someone's initials. */
+function AssistantMark() {
+  return (
+    <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full border border-gold/45 text-gold">
+      <Sparkle className="h-3.5 w-3.5" />
+    </span>
+  );
 }
 
 /** Messages from one person within this window read as a single turn. */
@@ -64,10 +90,12 @@ const MessageList = memo(function MessageList({
   messages,
   presence,
   selfMemberId,
+  assistantId,
 }: {
   messages: ChatMessageView[];
   presence: PresenceEvent[];
   selfMemberId: string | null;
+  assistantId: string | null;
 }) {
   const items = timeline(messages, presence);
   return (
@@ -87,6 +115,7 @@ const MessageList = memo(function MessageList({
         }
         const { message } = item;
         const mine = message.memberId === selfMemberId;
+        const fromAssistant = message.memberId === assistantId;
         const previousItem = items[index - 1];
         const previous = previousItem?.kind === "message" ? previousItem.message : null;
         const at = new Date(item.at);
@@ -95,7 +124,9 @@ const MessageList = memo(function MessageList({
         return (
           <li key={message.id} className={`flex gap-2 ${mine ? "flex-row-reverse" : ""} ${continues ? "" : "pt-3"}`}>
             {!mine ? (
-              <span className="w-7 shrink-0">{!continues ? <Avatar name={message.displayName} size={28} /> : null}</span>
+              <span className="w-7 shrink-0">
+                {continues ? null : fromAssistant ? <AssistantMark /> : <Avatar name={message.displayName} size={28} />}
+              </span>
             ) : null}
             <div className={`flex min-w-0 max-w-[80%] flex-col ${mine ? "items-end" : "items-start"}`}>
               {!continues ? (
@@ -109,7 +140,10 @@ const MessageList = memo(function MessageList({
                 className={`whitespace-pre-wrap break-words px-3.5 py-2 text-[14.5px] leading-snug sm:text-sm ${
                   mine
                     ? "rounded-2xl rounded-tr-md border border-gold/20 bg-own text-cream"
-                    : "rounded-2xl rounded-tl-md bg-panel-2 text-cream/95"
+                    : fromAssistant
+                      ? // Outlined, not filled: an answer, set apart from what people said.
+                        "rounded-2xl rounded-tl-md border border-line-strong text-cream/95"
+                      : "rounded-2xl rounded-tl-md bg-panel-2 text-cream/95"
                 }`}
               >
                 {message.body}
@@ -126,6 +160,7 @@ const NO_PRESENCE: PresenceEvent[] = [];
 
 export default function ChatPanel({
   messages,
+  assistant = null,
   presence = NO_PRESENCE,
   selfMemberId,
   onSend,
@@ -138,6 +173,15 @@ export default function ChatPanel({
   const [draft, setDraft] = useState("");
   const [reacting, setReacting] = useState(false);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Whether sending the draft would ask the assistant.
+  const asking = Boolean(assistant) && MENTION.test(draft);
+
+  /** Puts "@ai" in front of the draft, or takes it back out. */
+  function toggleAsking() {
+    setDraft((current) => (MENTION.test(current) ? current.replace(MENTION, "$1") : `@ai ${current}`));
+    inputRef.current?.focus();
+  }
   // Whether the viewer was at the bottom before the new message arrived. Read
   // before layout, so a message never yanks someone who scrolled up to read.
   const stick = useRef(true);
@@ -183,15 +227,30 @@ export default function ChatPanel({
             <div>
               <p className="font-serif text-2xl italic text-cream/85">The lights are down.</p>
               <p className="mt-1 text-sm text-faint">Say hello before the opening scene.</p>
+              {assistant ? (
+                <p className="mt-4 text-xs text-faint">
+                  Start a message with <span className="font-mono text-gold-soft">@ai</span> to ask {assistant.name}{" "}
+                  about what&apos;s playing.
+                </p>
+              ) : null}
             </div>
           </div>
         ) : (
-          <MessageList messages={messages} presence={presence} selfMemberId={selfMemberId} />
+          <MessageList
+            messages={messages}
+            presence={presence}
+            selfMemberId={selfMemberId}
+            assistantId={assistant?.memberId ?? null}
+          />
         )}
       </div>
 
       <p className="flex h-6 shrink-0 items-center gap-2 px-4 text-[11px] text-muted" aria-live="polite">
-        {typing.length > 0 ? (
+        {asking ? (
+          // Said where the question is written, and ahead of who is typing:
+          // this message leaves the server, and its writer should know first.
+          <span className="min-w-0 truncate text-faint">Sent to Google Gemini along with the recent chat.</span>
+        ) : typing.length > 0 ? (
           <>
             <span className="flex gap-0.5" aria-hidden>
               <span className="h-1 w-1 animate-bounce rounded-full bg-muted [animation-delay:-0.3s]" />
@@ -242,7 +301,23 @@ export default function ChatPanel({
             </svg>
           </button>
         ) : null}
+        {assistant ? (
+          <button
+            type="button"
+            onClick={toggleAsking}
+            disabled={muted}
+            aria-label={`Ask ${assistant.name}`}
+            aria-pressed={asking}
+            title={`Ask ${assistant.name}`}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full transition active:scale-95 disabled:opacity-35 ${
+              asking ? "bg-gold/10 text-gold" : "text-muted hover:text-cream"
+            }`}
+          >
+            <Sparkle className="h-[19px] w-[19px]" />
+          </button>
+        ) : null}
         <input
+          ref={inputRef}
           value={draft}
           onChange={(event) => {
             setDraft(event.target.value);
@@ -250,13 +325,13 @@ export default function ChatPanel({
           }}
           onBlur={() => onTyping?.(false)}
           disabled={muted}
-          placeholder={muted ? "The host muted you" : "Send a message"}
+          placeholder={muted ? "The host muted you" : asking ? "Ask the assistant" : "Send a message"}
           maxLength={500}
           aria-label="Message"
           enterKeyHint="send"
           // 16px on a phone, or iOS zooms the page when the box is tapped.
           className={`h-11 min-w-0 flex-1 bg-transparent text-base text-cream placeholder:text-faint focus:outline-none disabled:opacity-50 sm:text-sm ${
-            onReact ? "pl-1 lg:pl-4" : "pl-4"
+            assistant ? "pl-1" : onReact ? "pl-1 lg:pl-4" : "pl-4"
           }`}
         />
         <button

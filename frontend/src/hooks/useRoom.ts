@@ -117,6 +117,12 @@ const TYPING_REFRESH_MS = 3000;
 const TYPING_IDLE_MS = 4000;
 /** Drop someone else's indicator if no refresh arrives in this long. */
 const TYPING_EXPIRY_MS = 6000;
+/**
+ * The assistant says "typing" once, when it starts on an answer, and never
+ * refreshes it: the answer (or a failure) clears it. This only covers a lost
+ * "stopped", and is longer than the server waits for the model.
+ */
+const ASSISTANT_TYPING_MS = 25_000;
 const REACTION_LIFETIME_MS = 2800;
 /**
  * After the host acts on the player directly, the engine leaves the player
@@ -379,9 +385,11 @@ export function useRoom(code: string, invite: string | null): RoomSession {
             REACTION_LIFETIME_MS,
           );
         } else if (event.type === "typing" && event.memberId !== self) {
+          const lasts =
+            event.memberId === roomRef.current?.assistant?.memberId ? ASSISTANT_TYPING_MS : TYPING_EXPIRY_MS;
           setTypingMap((current) => {
             const next = new Map(current);
-            if (event.typing) next.set(event.memberId, { name: event.displayName, until: Date.now() + TYPING_EXPIRY_MS });
+            if (event.typing) next.set(event.memberId, { name: event.displayName, until: Date.now() + lasts });
             else next.delete(event.memberId);
             return next;
           });

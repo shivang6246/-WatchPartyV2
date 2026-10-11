@@ -1,11 +1,13 @@
 package com.watchparty.room;
 
+import com.watchparty.ai.RoomAssistant;
 import com.watchparty.auth.EmailVerificationService;
 import com.watchparty.common.ApiException;
 import com.watchparty.config.AppProperties;
 import com.watchparty.metrics.WatchPartyMetrics;
 import com.watchparty.room.RoomDtos.AddQueueRequest;
 import com.watchparty.room.RoomDtos.AdvanceQueueRequest;
+import com.watchparty.room.RoomDtos.AssistantView;
 import com.watchparty.room.RoomDtos.CreateRoomRequest;
 import com.watchparty.room.RoomDtos.JoinRoomRequest;
 import com.watchparty.room.RoomDtos.MemberView;
@@ -809,7 +811,8 @@ public class RoomService {
                 System.currentTimeMillis(),
                 room.getCurrentItemId(),
                 room.getQueue().stream().map(QueueItemView::of).toList(),
-                stateService.hostAwayDeadline(room.getId()));
+                stateService.hostAwayDeadline(room.getId()),
+                props.ai().configured() ? new AssistantView(RoomAssistant.MEMBER_ID, RoomAssistant.NAME) : null);
     }
 
     /** The subset of room fields that are safe to push to every member. */

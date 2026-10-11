@@ -6,6 +6,7 @@ import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.Timer;
+import java.time.Duration;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,7 @@ public class WatchPartyMetrics {
     private final AtomicLong activeRooms = new AtomicLong();
     private final Timer applyScript;
     private final DistributionSummary drift;
+    private final Timer assistantReply;
 
     public WatchPartyMetrics(MeterRegistry registry, SessionRegistry sessions) {
         this.registry = registry;
@@ -42,6 +44,9 @@ public class WatchPartyMetrics {
         this.drift = DistributionSummary.builder("watchparty.sync.drift")
                 .description("Absolute distance between a member's reported position and the projection")
                 .baseUnit("milliseconds")
+                .register(registry);
+        this.assistantReply = Timer.builder("watchparty.ai.reply")
+                .description("How long the room assistant's model takes to answer")
                 .register(registry);
     }
 
@@ -97,5 +102,25 @@ public class WatchPartyMetrics {
 
     public void queueAdvanced(String reason) {
         registry.counter("watchparty.queue.advanced", "reason", reason).increment();
+    }
+
+    /**
+     * One "@ai" in a chat. result is answered, empty (the model had no reply),
+     * quota (the model's own rate limit), failed, limited (a member or room
+     * asking too often), budget (the deployment's allowance), busy or off.
+     */
+    public void assistantRequest(String result) {
+        registry.counter("watchparty.ai.requests", "result", result).increment();
+    }
+
+    /** What an answer cost against the model's token limits. */
+    public void assistantTokens(long prompt, long completion) {
+        registry.counter("watchparty.ai.tokens", "type", "prompt").increment(prompt);
+        registry.counter("watchparty.ai.tokens", "type", "completion").increment(completion);
+    }
+
+    /** From the question being picked up to the model's reply. */
+    public void assistantReply(Duration took) {
+        assistantReply.record(took);
     }
 }

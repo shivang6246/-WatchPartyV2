@@ -137,9 +137,11 @@ async function main() {
       (s) => s.id === "drm_extension" && s.playableOnWeb === false,
     ),
   );
+  // The source list is public (server configuration, no quota); search spends
+  // the API key's quota, so that is what must stay behind a session.
   check(
-    "the catalogue refuses anonymous callers",
-    (await get("/api/v1/catalog/sources")).status === 401,
+    "catalogue search refuses anonymous callers",
+    (await get("/api/v1/catalog/youtube/search?q=test")).status === 401,
   );
 
   const resolved = await get(
@@ -395,6 +397,53 @@ async function main() {
     viewBody.members.some((m) => m.present),
     JSON.stringify(viewBody.members.map((m) => [m.displayName, m.present])),
   );
+
+  // --- the room assistant ----------------------------------------------------
+  // "@ai" in a message asks the assistant, and is a chat message like any
+  // other first. With no GEMINI_API_KEY the room offers none and only the
+  // asker is told so; with one, an answer (or the reason there is none)
+  // follows, which spends one request of the key's quota per run.
+  const assistant = viewBody.assistant;
+  const asked = "@ai say hello in three words";
+  guestConn.inbox.errors.length = 0;
+  hostConn.inbox.chat.length = 0;
+  guestConn.client.publish({
+    destination: `/app/room/${roomId}/chat`,
+    body: JSON.stringify({ body: asked }),
+  });
+  await wait(400);
+  check(
+    "a question for the assistant is a chat message first",
+    hostConn.inbox.chat[0]?.body === asked &&
+      hostConn.inbox.chat[0].displayName === "Alex",
+  );
+  if (!assistant) {
+    check(
+      "with no model configured, only the asker is told the assistant is off",
+      guestConn.inbox.errors.at(-1)?.code === "assistant_off" &&
+        hostConn.inbox.errors.every((e) => e.code !== "assistant_off"),
+      guestConn.inbox.errors.at(-1)?.code,
+    );
+  } else {
+    const thinking = hostConn.inbox.activity.some(
+      (a) => a.type === "typing" && a.typing && a.memberId === assistant.memberId,
+    );
+    // The model takes a moment; the server gives up on it after 20 s.
+    let answer;
+    let refusal;
+    for (let waited = 0; waited < 25000 && !answer && !refusal; waited += 250) {
+      await wait(250);
+      answer = hostConn.inbox.chat.find((m) => m.memberId === assistant.memberId);
+      refusal = guestConn.inbox.errors.find((e) => e.code?.startsWith("assistant_"));
+    }
+    check(
+      "the assistant shows as typing, then answers in the chat or says why not",
+      thinking && Boolean(answer || refusal),
+      answer?.body ?? refusal?.code ?? "nothing came back",
+    );
+    // Its "typing" must not be taken for a member's in the checks below.
+    hostConn.inbox.activity.length = 0;
+  }
 
   // A session may not reach into another room
   const other = await post(

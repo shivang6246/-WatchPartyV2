@@ -21,16 +21,32 @@ import { loadYouTubeApi } from "@/lib/youtube";
 const TRAILER = /\b(trailer|teaser)\b/i;
 /** Trailers open on ratings cards and studio logos; start on the picture. */
 const START_AT_S = 4;
-/** The page paints first; the backdrop's player is fetched a beat later. */
-const START_DELAY_MS = 900;
 const PLAYLIST_SIZE = 12;
 /**
  * YouTube draws its own title bar and buttons over the first seconds of
- * playback, controls off or not. The still stays up until they have gone:
- * the title bar by ~3 s, the centre pause button (desktop and phone embeds
- * alike) ~4.7 s after start.
+ * playback, whatever the player is asked for (controls off, its muted-autoplay
+ * mode, hideVideoInfo: all tried), and nothing on the page can reach into the
+ * frame to remove them. The still stays up until they have gone.
+ *
+ * On a wide screen the crop already hides the bars at the top and bottom, and
+ * what is left is the pause button in the middle of the picture. Recorded
+ * frame by frame in desktop Chrome, it is on screen until 4.0 s after the
+ * player reports PLAYING and gone by 4.05 s, the same after a first start, a
+ * resume and a change of video: so every one of those waits, and none can
+ * wait less. A phone's box shows the bars too, and a phone's embed was timed
+ * at ~4.7 s, so it keeps the longer wait.
  */
-const YOUTUBE_CHROME_MS = 5200;
+const YOUTUBE_CHROME_MS = { wide: 4100, narrow: 5200 } as const;
+/**
+ * The playlist of the last visit. The player is the slow part of the hero
+ * (YouTube takes about a second to boot it, then the wait above), so it must
+ * not also wait for the catalogue to say what to play: a returning visitor's
+ * trailer is chosen from this at once, and the fresh list is kept for next
+ * time. A trailer that has since been taken down just skips to the next.
+ */
+const PLAYLIST_KEY = "wp.trailers";
+const PLAYLIST_KEPT = 24;
+const PLAYLIST_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** How often the player is checked for having stopped when it should play. */
 const WATCH_EVERY_MS = 2000;
 /** How often the progress hairline is moved on; it glides between updates. */
@@ -59,6 +75,12 @@ interface Hero {
   setShowing: (showing: boolean) => void;
   /** Playing, and past YouTube's opening overlay: the trailer may be seen. */
   revealed: boolean;
+  /**
+   * When this run of playback began (performance.now()), which is what the
+   * wait for YouTube's overlay counts from. Not always "when we heard": the
+   * frame can be playing before the API is attached to it.
+   */
+  playingSinceRef: MutableRefObject<number>;
   /**
    * It should be playing but will not start by itself: the browser or the
    * device blocks autoplay (an iPhone in Low Power Mode, a strict setting).
@@ -100,6 +122,52 @@ function shuffled<T>(items: T[]): T[] {
   return copy;
 }
 
+function rememberedPlaylist(): CatalogItem[] {
+  try {
+    const kept = JSON.parse(window.localStorage.getItem(PLAYLIST_KEY) ?? "null") as {
+      at?: number;
+      items?: CatalogItem[];
+    } | null;
+    if (!kept?.items || !kept.at || Date.now() - kept.at > PLAYLIST_MAX_AGE_MS) return [];
+    return kept.items.filter((item) => typeof item?.ref === "string" && typeof item.title === "string");
+  } catch {
+    return [];
+  }
+}
+
+function rememberPlaylist(items: CatalogItem[]) {
+  try {
+    window.localStorage.setItem(PLAYLIST_KEY, JSON.stringify({ at: Date.now(), items: items.slice(0, PLAYLIST_KEPT) }));
+  } catch {
+    // Storage is full or unavailable: the next visit just asks the catalogue first.
+  }
+}
+
+/**
+ * The embed's own address, so the frame can be put on the page the moment the
+ * trailer is known. Going through the IFrame API instead means fetching its
+ * script first and only then making the frame, a second of doing nothing;
+ * the API is attached to this frame afterwards (enablejsapi), for control.
+ */
+function embedUrl(videoId: string): string {
+  const vars = new URLSearchParams({
+    autoplay: "1",
+    // Muted is what lets it start without a tap, phones included.
+    mute: "1",
+    controls: "0",
+    disablekb: "1",
+    fs: "0",
+    iv_load_policy: "3",
+    rel: "0",
+    // Without it an iPhone opens the trailer fullscreen.
+    playsinline: "1",
+    start: String(START_AT_S),
+    enablejsapi: "1",
+    origin: window.location.origin,
+  });
+  return `https://www.youtube-nocookie.com/embed/${encodeURIComponent(videoId)}?${vars}`;
+}
+
 /**
  * The home screen's backdrop: one of the month's most-watched film trailers,
  * playing muted behind the top of the page, a different one each visit.
@@ -120,6 +188,13 @@ export function HeroProvider({ children }: { children: ReactNode }) {
   const progressBarRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YT.Player | null>(null);
   const userPausedRef = useRef(false);
+  const playingSinceRef = useRef(0);
+
+  // Where the IFrame API's script comes from. Asked for while rendering, so
+  // it is in the page's HTML and the connection opens before any of this has
+  // hydrated. (The embed's own host gains nothing from the same: a frame from
+  // another site does not share the page's connections.)
+  preconnect("https://www.youtube.com");
 
   useEffect(() => {
     const query = window.matchMedia("(min-width: 1024px)");
@@ -131,21 +206,23 @@ export function HeroProvider({ children }: { children: ReactNode }) {
     const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const saveData = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true;
     setMotion(!calm && !saveData);
-    // The trailer will play by itself: open the connections its player needs
-    // (the API script and the embed) while the page is still settling.
-    if (!calm && !saveData) {
-      preconnect("https://www.youtube.com");
-      preconnect("https://www.youtube-nocookie.com");
-    }
+
+    // Last visit's list first: there is nothing to wait for.
+    const remembered = rememberedPlaylist();
+    if (remembered.length > 0) setItems(shuffled(remembered).slice(0, PLAYLIST_SIZE));
 
     let cancelled = false;
     api
       .youtubeTrailers()
       .then((page) => {
-        if (cancelled) return;
         const playable = page.items.filter((item) => item.ref && !item.live);
         const trailers = playable.filter((item) => TRAILER.test(item.title));
-        setItems(shuffled(trailers.length >= 3 ? trailers : playable).slice(0, PLAYLIST_SIZE));
+        const playlist = trailers.length >= 3 ? trailers : playable;
+        rememberPlaylist(playlist);
+        // Already playing one from the remembered list: changing the list
+        // under it now would start the trailer again.
+        if (cancelled || remembered.length > 0) return;
+        setItems(shuffled(playlist).slice(0, PLAYLIST_SIZE));
       })
       .catch(() => undefined);
     return () => {
@@ -154,16 +231,18 @@ export function HeroProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  // Shown a moment after it starts playing (YouTube's overlay), hidden the
-  // moment it stops, whatever stopped it.
+  // Shown once YouTube's overlay has gone from this run of playback, hidden
+  // the moment it stops, whatever stopped it.
   useEffect(() => {
     if (!showing) {
       setRevealed(false);
       return;
     }
-    const timer = setTimeout(() => setRevealed(true), YOUTUBE_CHROME_MS);
+    const wait = wide ? YOUTUBE_CHROME_MS.wide : YOUTUBE_CHROME_MS.narrow;
+    const served = performance.now() - playingSinceRef.current;
+    const timer = setTimeout(() => setRevealed(true), Math.max(0, wait - served));
     return () => clearTimeout(timer);
-  }, [showing]);
+  }, [showing, wide]);
 
   const next = useCallback(() => {
     // Asking for the next one is asking for it to play.
@@ -219,6 +298,7 @@ export function HeroProvider({ children }: { children: ReactNode }) {
       showing,
       setShowing,
       revealed,
+      playingSinceRef,
       blocked,
       setBlocked,
       userPausedRef,
@@ -248,11 +328,11 @@ export function HeroBackdrop() {
     item,
     turn,
     wide,
-    motion,
     wantsPlayer,
     showing,
     setShowing,
     revealed,
+    playingSinceRef,
     setBlocked,
     userPausedRef,
     progressRef,
@@ -276,74 +356,83 @@ export function HeroBackdrop() {
     setPoster(ref ? `https://i.ytimg.com/vi/${ref}/${wide ? "maxresdefault" : "hqdefault"}.jpg` : null);
   }, [ref, wide]);
 
-  // The player, made once, for the first trailer: a beat after the page
-  // paints, or at once when the viewer pressed play.
+  // The player, made once, for the first trailer, the moment it is known (or
+  // the moment the viewer presses play, where it does not start by itself).
+  // Nothing is waited for: the frame goes on the page with its own address,
+  // already told to play, and YouTube's API is fetched alongside and attached
+  // to it. Every step that used to come first (a pause after paint, the API's
+  // script, then the frame) was time the trailer spent not loading.
   const created = useRef(false);
   useEffect(() => {
-    if (!wantsPlayer || !ref || created.current) return;
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      void loadYouTubeApi().then((YTApi) => {
-        if (cancelled || !hostRef.current || created.current) return;
-        created.current = true;
-        const target = document.createElement("div");
-        hostRef.current.appendChild(target);
-        playerRef.current = new YTApi.Player(target, {
-          host: "https://www.youtube-nocookie.com",
-          videoId: ref,
-          playerVars: {
-            autoplay: 1,
-            mute: 1,
-            controls: 0,
-            disablekb: 1,
-            fs: 0,
-            iv_load_policy: 3,
-            rel: 0,
-            // Without it an iPhone opens the trailer fullscreen.
-            playsinline: 1,
-            start: START_AT_S,
+    if (!wantsPlayer || !ref || created.current || !hostRef.current) return;
+    created.current = true;
+    const frame = document.createElement("iframe");
+    frame.src = embedUrl(ref);
+    frame.allow = "autoplay; encrypted-media; picture-in-picture";
+    // YouTube refuses an embed that arrives with no referrer (error 153).
+    frame.referrerPolicy = "strict-origin-when-cross-origin";
+    frame.title = "Trailer";
+    frame.tabIndex = -1;
+    hostRef.current.appendChild(frame);
+
+    void loadYouTubeApi().then((YTApi) => {
+      // Left the page while the script loaded: the frame went with it.
+      if (!frame.isConnected) return;
+      // One run of playback, from starting to stopping. Buffering in the
+      // middle is not a new run, so it does not restart the wait.
+      let running = false;
+      const playing = (startedMsAgo: number) => {
+        failuresRef.current = 0;
+        if (!running) playingSinceRef.current = performance.now() - startedMsAgo;
+        running = true;
+        setBlocked(false);
+        setShowing(true);
+      };
+      playerRef.current = new YTApi.Player(frame, {
+        events: {
+          onReady: (event) => {
+            const player = event.target;
+            player.mute();
+            if (!userPausedRef.current) player.playVideo();
+            // The frame was told to play by its own address, so it can be
+            // playing before anything here was listening. No state change
+            // will say so, and part of the wait for YouTube's overlay has
+            // been served already: as long as it has been playing.
+            if (player.getPlayerState() === YTApi.PlayerState.PLAYING) {
+              playing(Math.max(0, (player.getCurrentTime() - START_AT_S) * 1000));
+            }
           },
-          events: {
-            onReady: (event) => {
-              // Muted is what lets it start without a tap, phones included.
-              event.target.mute();
-              if (!userPausedRef.current) event.target.playVideo();
-            },
-            onStateChange: (event) => {
-              const state = event.data;
-              if (state === YTApi.PlayerState.PLAYING) {
-                failuresRef.current = 0;
-                setBlocked(false);
-                setShowing(true);
-              } else if (state === YTApi.PlayerState.ENDED) {
-                nextRef.current();
-              } else if (state !== YTApi.PlayerState.BUFFERING) {
-                // Paused, cued or not started: whoever did it, the still
-                // covers YouTube's own paused screen. Buffering is only a
-                // pause in the picture, so it changes nothing.
-                setShowing(false);
-              }
-            },
-            // Removed, private or not embeddable after all: on to the next one.
-            onError: () => {
-              failuresRef.current += 1;
-              if (failuresRef.current >= 3) {
-                setShowing(false);
-                playerRef.current?.destroy();
-                playerRef.current = null;
-                return;
-              }
+          onStateChange: (event) => {
+            const state = event.data;
+            if (state === YTApi.PlayerState.PLAYING) {
+              playing(0);
+            } else if (state === YTApi.PlayerState.ENDED) {
+              running = false;
               nextRef.current();
-            },
+            } else if (state !== YTApi.PlayerState.BUFFERING) {
+              // Paused, cued or not started: whoever did it, the still
+              // covers YouTube's own paused screen. Buffering is only a
+              // pause in the picture, so it changes nothing.
+              running = false;
+              setShowing(false);
+            }
           },
-        });
+          // Removed, private or not embeddable after all: on to the next one.
+          onError: () => {
+            running = false;
+            failuresRef.current += 1;
+            if (failuresRef.current >= 3) {
+              setShowing(false);
+              playerRef.current?.destroy();
+              playerRef.current = null;
+              return;
+            }
+            nextRef.current();
+          },
+        },
       });
-    }, motion ? START_DELAY_MS : 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [wantsPlayer, motion, ref, playerRef, setShowing, setBlocked, userPausedRef]);
+    });
+  }, [wantsPlayer, ref, playerRef, playingSinceRef, setShowing, setBlocked, userPausedRef]);
 
   // Later trailers load into the same player.
   const loadedTurn = useRef(turn);

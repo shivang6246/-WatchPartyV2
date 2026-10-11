@@ -467,6 +467,7 @@ function Room() {
                 onTyping={session.setTyping}
                 typing={session.typing}
                 muted={session.selfMuted}
+                assistant={room.assistant}
                 onReact={session.react}
                 reactDisabled={session.selfMuted || session.connection !== "connected"}
               />
